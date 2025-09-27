@@ -4,6 +4,7 @@ import { useCoAgent, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import CardRenderer from "@/components/canvas/CardRenderer";
 import { EmptyState } from "@/components/empty-state";
 import type { AgentState, Item, VideoData } from "@/lib/canvas/types";
@@ -70,11 +71,12 @@ export default function PilotDirectorPage() {
 
   useCopilotAction({
     name: "refreshFiles",
-    description: "Refresh the file list after backend operations complete",
+    description: "Refresh the file display in the center panel",
     parameters: [],
     handler: async () => {
+      console.log("[DEBUG] refreshFiles action called");
       await fetchFiles();
-      return "Files refreshed";
+      return "File display has been refreshed successfully";
     },
   });
 
@@ -199,12 +201,22 @@ export default function PilotDirectorPage() {
                 {viewState.globalDescription || "AI-powered video editing with natural language commands"}
               </p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => setShowJsonView(!showJsonView)}
-            >
-              {showJsonView ? "Files View" : "JSON View"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowJsonView(!showJsonView)}
+              >
+                {showJsonView ? "Files View" : "JSON View"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={fetchFiles}
+                disabled={loadingFiles}
+                size="sm"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingFiles ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
         </div>
 
