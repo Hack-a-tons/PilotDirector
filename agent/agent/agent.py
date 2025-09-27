@@ -282,8 +282,28 @@ _backend_tools = _load_composio_tools()
 _backend_tools.append(_sheet_list_tool)
 print(f"Backend tools loaded: {len(_backend_tools)} tools")
 
+def _create_llm():
+    """Create OpenAI LLM instance, supporting both OpenAI and Azure OpenAI."""
+    # Check if Azure OpenAI is configured
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    azure_key = os.getenv("AZURE_OPENAI_KEY")
+    
+    if azure_endpoint and azure_key:
+        # Use Azure OpenAI
+        return OpenAI(
+            model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1"),
+            api_type="azure",
+            api_base=azure_endpoint,
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
+            api_key=azure_key
+        )
+    else:
+        # Use regular OpenAI
+        return OpenAI(model="gpt-4.1")
+
+
 agentic_chat_router = get_ag_ui_workflow_router(
-    llm=OpenAI(model="gpt-4.1"),
+    llm=_create_llm(),
     # Provide frontend tool stubs so the model knows their names/signatures.
     frontend_tools=[
         createItem,
