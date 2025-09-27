@@ -51,14 +51,32 @@ def get_video_info(filename: str) -> str:
     except Exception as e:
         return f"Error getting video info for {filename}: {str(e)}"
 
+def generate_unique_filename(base_path: str, filename: str) -> str:
+    """Generate a unique filename by adding a number suffix if file exists."""
+    full_path = os.path.join(base_path, filename)
+    if not os.path.exists(full_path):
+        return filename
+    
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    while True:
+        new_filename = f"{name}_{counter}{ext}"
+        new_path = os.path.join(base_path, new_filename)
+        if not os.path.exists(new_path):
+            return new_filename
+        counter += 1
+
 def cut_video(filename: str, start_time: str, duration: str, output_filename: str) -> str:
     """Cut a video segment using ffmpeg."""
     try:
         input_path = os.path.join("../videos", filename)
-        output_path = os.path.join("../videos", output_filename)
         
         if not os.path.exists(input_path):
             return f"Error: Input video {filename} not found"
+        
+        # Generate unique output filename
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
         
         # Get video duration first to validate
         info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
@@ -75,9 +93,9 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
             if start_seconds + duration_seconds > video_duration:
                 return f"Warning: Requested duration extends beyond video end. Cutting from {start_time}s to end of video ({video_duration:.2f}s)"
         
-        # Use re-encoding instead of copy to ensure proper cutting
+        # Put -ss before -i for better seeking performance
         cmd = [
-            "ffmpeg", "-i", input_path, "-ss", start_time, 
+            "ffmpeg", "-ss", start_time, "-i", input_path, 
             "-t", duration, "-c:v", "libx264", "-c:a", "aac", output_path, "-y"
         ]
         
@@ -92,10 +110,10 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
         if os.path.exists(output_path):
             size = os.path.getsize(output_path)
             if size < 1000:  # Less than 1KB is suspicious
-                print(f"[DEV] Warning: Small output file {output_filename} ({size} bytes)")
-                return f"Warning: Output file {output_filename} created but very small ({size} bytes). Check if cut parameters are correct."
+                print(f"[DEV] Warning: Small output file {unique_output} ({size} bytes)")
+                return f"Warning: Output file {unique_output} created but very small ({size} bytes). Check if cut parameters are correct."
         
-        return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {output_filename}"
+        return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {unique_output}"
     except Exception as e:
         print(f"[DEV] Exception in cut_video: {str(e)}")
         return f"Error cutting video {filename}: {str(e)}"
@@ -111,7 +129,9 @@ def concatenate_videos(filenames: List[str], output_filename: str) -> str:
                 if os.path.exists(video_path):
                     f.write(f"file '{filename}'\n")
         
-        output_path = os.path.join("../videos", output_filename)
+        # Generate unique output filename
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
         
         cmd = [
             "ffmpeg", "-f", "concat", "-safe", "0", 
@@ -129,7 +149,7 @@ def concatenate_videos(filenames: List[str], output_filename: str) -> str:
             print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error concatenating videos: {result.stderr}"
         
-        return f"Successfully concatenated {len(filenames)} videos into {output_filename}"
+        return f"Successfully concatenated {len(filenames)} videos into {unique_output}"
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -137,10 +157,13 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
     """Extract a frame from a video at a specific timestamp."""
     try:
         input_path = os.path.join("../videos", filename)
-        output_path = os.path.join("../videos", output_filename)
         
         if not os.path.exists(input_path):
             return f"Error: Input video {filename} not found"
+        
+        # Generate unique output filename
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
         
         # Get video duration first to validate timestamp
         info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
@@ -158,13 +181,16 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
             "-vframes", "1", output_path, "-y"
         ]
         
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error extracting frame: {result.stderr}"
         
-        return f"Successfully extracted frame from {filename} at {timestamp}s, saved as {output_filename}"
+        return f"Successfully extracted frame from {filename} at {timestamp}s, saved as {unique_output}"
     except Exception as e:
+        print(f"[DEV] Exception in extract_frame: {str(e)}")
         return f"Error extracting frame from {filename}: {str(e)}"
 
 def list_videos() -> str:
