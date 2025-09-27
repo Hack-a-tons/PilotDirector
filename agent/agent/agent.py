@@ -75,24 +75,29 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
             if start_seconds + duration_seconds > video_duration:
                 return f"Warning: Requested duration extends beyond video end. Cutting from {start_time}s to end of video ({video_duration:.2f}s)"
         
+        # Use re-encoding instead of copy to ensure proper cutting
         cmd = [
             "ffmpeg", "-i", input_path, "-ss", start_time, 
-            "-t", duration, "-c", "copy", output_path, "-y"
+            "-t", duration, "-c:v", "libx264", "-c:a", "aac", output_path, "-y"
         ]
         
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error cutting video: {result.stderr}"
         
         # Verify output file was created and has reasonable size
         if os.path.exists(output_path):
             size = os.path.getsize(output_path)
             if size < 1000:  # Less than 1KB is suspicious
+                print(f"[DEV] Warning: Small output file {output_filename} ({size} bytes)")
                 return f"Warning: Output file {output_filename} created but very small ({size} bytes). Check if cut parameters are correct."
         
         return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {output_filename}"
     except Exception as e:
+        print(f"[DEV] Exception in cut_video: {str(e)}")
         return f"Error cutting video {filename}: {str(e)}"
 
 def concatenate_videos(filenames: List[str], output_filename: str) -> str:
@@ -113,6 +118,7 @@ def concatenate_videos(filenames: List[str], output_filename: str) -> str:
             "-i", file_list_path, "-c", "copy", output_path, "-y"
         ]
         
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         # Clean up temp file
@@ -120,6 +126,7 @@ def concatenate_videos(filenames: List[str], output_filename: str) -> str:
             os.remove(file_list_path)
         
         if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error concatenating videos: {result.stderr}"
         
         return f"Successfully concatenated {len(filenames)} videos into {output_filename}"
@@ -176,33 +183,36 @@ def list_videos() -> str:
                 
                 # Get basic info for each video
                 try:
-                    cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration,size", "-of", "csv=p=0", file_path]
+                    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file_path]
                     result = subprocess.run(cmd, capture_output=True, text=True)
                     
                     if result.returncode == 0:
-                        lines = result.stdout.strip().split('\n')
-                        if len(lines) > 0 and ',' in lines[0]:
-                            duration_str, size_str = lines[0].split(',')
-                            duration = float(duration_str) if duration_str else 0
-                            size = int(size_str) if size_str else 0
-                            
-                            # Get modification time
-                            stat = os.stat(file_path)
-                            from datetime import datetime
-                            mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                            
-                            videos.append({
-                                'name': file,
-                                'duration': duration,
-                                'size': size,
-                                'modified': mod_time
-                            })
-                        else:
-                            videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
+                        data = json.loads(result.stdout)
+                        format_info = data.get("format", {})
+                        video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
+                        
+                        duration = float(format_info.get("duration", 0))
+                        size = int(format_info.get("size", 0))
+                        width = video_stream.get("width", 0)
+                        height = video_stream.get("height", 0)
+                        
+                        # Get modification time
+                        stat = os.stat(file_path)
+                        from datetime import datetime
+                        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        videos.append({
+                            'name': file,
+                            'duration': duration,
+                            'size': size,
+                            'width': width,
+                            'height': height,
+                            'modified': mod_time
+                        })
                     else:
-                        videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
+                        videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'modified': 'unknown'})
                 except:
-                    videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
+                    videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'modified': 'unknown'})
         
         if not videos:
             return "No video files found"
@@ -213,11 +223,78 @@ def list_videos() -> str:
         result = "Available videos:\n"
         for video in videos:
             size_mb = video['size'] / 1024 / 1024 if video['size'] > 0 else 0
-            result += f"- {video['name']}: {video['duration']:.1f}s, {size_mb:.1f}MB, modified: {video['modified']}\n"
+            resolution = f"{video['width']}x{video['height']}" if video['width'] > 0 else "unknown"
+            result += f"- {video['name']}: {video['duration']:.1f}s, {size_mb:.1f}MB, {resolution}, modified: {video['modified']}\n"
         
         return result.strip()
     except Exception as e:
         return f"Error listing videos: {str(e)}"
+
+def list_images() -> str:
+    """List all image files in the videos directory."""
+    try:
+        videos_dir = "../videos"
+        if not os.path.exists(videos_dir):
+            return "Videos directory not found"
+        
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+        images = []
+        
+        for file in os.listdir(videos_dir):
+            if any(file.lower().endswith(ext) for ext in image_extensions):
+                file_path = os.path.join(videos_dir, file)
+                
+                try:
+                    # Get image info using ffprobe
+                    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", file_path]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        data = json.loads(result.stdout)
+                        stream = data.get("streams", [{}])[0]
+                        width = stream.get("width", 0)
+                        height = stream.get("height", 0)
+                        
+                        # Get file size and modification time
+                        stat = os.stat(file_path)
+                        size = stat.st_size
+                        from datetime import datetime
+                        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        images.append({
+                            'name': file,
+                            'width': width,
+                            'height': height,
+                            'size': size,
+                            'modified': mod_time
+                        })
+                    else:
+                        stat = os.stat(file_path)
+                        images.append({
+                            'name': file,
+                            'width': 0,
+                            'height': 0,
+                            'size': stat.st_size,
+                            'modified': 'unknown'
+                        })
+                except:
+                    images.append({'name': file, 'width': 0, 'height': 0, 'size': 0, 'modified': 'unknown'})
+        
+        if not images:
+            return "No image files found"
+        
+        # Sort by modification time (most recent first)
+        images.sort(key=lambda x: x['modified'], reverse=True)
+        
+        result = "Available images:\n"
+        for image in images:
+            size_kb = image['size'] / 1024 if image['size'] > 0 else 0
+            resolution = f"{image['width']}x{image['height']}" if image['width'] > 0 else "unknown"
+            result += f"- {image['name']}: {resolution}, {size_kb:.1f}KB, modified: {image['modified']}\n"
+        
+        return result.strip()
+    except Exception as e:
+        return f"Error listing images: {str(e)}"
 
 # Frontend tool stubs for video management
 def createVideo(name: Annotated[str, "Video name/title"]) -> str:
@@ -242,6 +319,7 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=concatenate_videos),
     FunctionTool.from_defaults(fn=extract_frame),
     FunctionTool.from_defaults(fn=list_videos),
+    FunctionTool.from_defaults(fn=list_images),
 ]
 
 print(f"Backend tools loaded: {len(_backend_tools)} video processing tools")
