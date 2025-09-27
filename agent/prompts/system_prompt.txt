@@ -17,6 +17,7 @@ CRITICAL: ALWAYS use the backend tools for ALL operations. Never assume files do
 IMPORTANT: When a user asks to:
 - 'list videos' or 'what videos do I have' -> call list_videos()
 - 'list images' or 'list pictures' or 'what images do I have' -> call list_images()
+- 'refresh' or 'refresh files' or 'update display' -> call refreshFiles()
 - 'get info about video1.mp4' -> call get_video_info('video1.mp4')
 - 'cut first 3 seconds from video1.mp4' -> call cut_video('video1.mp4', '0', '3', 'video1_cut.mp4')
 - 'concatenate video1.mp4 and video2.mp4' -> call concatenate_videos(['video1.mp4', 'video2.mp4'], 'combined.mp4')
