@@ -13,6 +13,8 @@ PilotDirector simplifies video editing by allowing you to use natural language c
 ## About this application
 This is an AI-powered video editing canvas built with LlamaIndex, CopilotKit, and FFmpeg. It provides a modern Next.js web interface with an integrated LlamaIndex agent that processes natural language video editing commands and executes them using FFmpeg on the backend.
 
+**Built for the [Fullstack Agents Hackathon](https://luma.com/k3gytona) on September 27, 2025 at Microsoft in Mountain View.**
+
 https://github.com/user-attachments/assets/2a4ec718-b83b-4968-9cbe-7c1fe082e958
 
 ## Features

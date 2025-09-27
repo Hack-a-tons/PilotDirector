@@ -1,12 +1,11 @@
-import { AgentState, CardType, ChartData, EntityData, ItemData, NoteData, ProjectData } from "@/lib/canvas/types";
+import { AgentState, CardType, VideoData, ItemData } from "@/lib/canvas/types";
 
 export const initialState: AgentState = {
   items: [],
-  globalTitle: "",
-  globalDescription: "",
+  globalTitle: "PilotDirector",
+  globalDescription: "AI-powered video editing with natural language commands",
   lastAction: "",
   itemsCreated: 0,
-  syncSheetId: "",
 };
 
 export function isNonEmptyAgentState(value: unknown): value is AgentState {
@@ -17,27 +16,18 @@ export function isNonEmptyAgentState(value: unknown): value is AgentState {
 
 export function defaultDataFor(type: CardType): ItemData {
   switch (type) {
-    case "project":
+    case "video":
       return {
-        field1: "",
-        field2: "",
-        field3: "",
-        field4: [],
-        field4_id: 0,
-      } as ProjectData;
-    case "entity":
-      return {
-        field1: "",
-        field2: "",
-        field3: [],
-        field3_options: ["Tag 1", "Tag 2", "Tag 3"],
-      } as EntityData;
-    case "note":
-      return { field1: "" } as NoteData;
-    case "chart":
-      return { field1: [], field1_id: 0 } as ChartData;
+        filename: "",
+        filepath: "",
+        uploadedAt: new Date().toISOString(),
+      } as VideoData;
     default:
-      return { field1: "" } as NoteData;
+      return {
+        filename: "",
+        filepath: "",
+        uploadedAt: new Date().toISOString(),
+      } as VideoData;
   }
 }
 

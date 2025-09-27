@@ -1,48 +1,16 @@
-export interface ChecklistItem {
-  id: string;
-  text: string;
-  done: boolean;
-  proposed: boolean;
+export type CardType = "video";
+
+export interface VideoData {
+  filename: string;
+  filepath: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+  size?: number;
+  uploadedAt: string;
 }
 
-export interface LinkItem {
-  title: string;
-  url: string;
-}
-
-export type CardType = "project" | "entity" | "note" | "chart";
-
-export interface ProjectData {
-  field1: string; // text
-  field2: string; // select
-  field3: string; // date
-  field4: ChecklistItem[]; // checklist
-  field4_id: number; // id counter
-}
-
-export interface EntityData {
-  field1: string; // text
-  field2: string; // select
-  field3: string[]; // tags
-  field3_options: string[]; // options
-}
-
-export interface NoteData {
-  field1?: string; // textarea
-}
-
-export interface ChartMetric {
-  id: string;
-  label: string;
-  value: number | ""; // 0..100
-}
-
-export interface ChartData {
-  field1: ChartMetric[]; // metrics
-  field1_id: number; // id counter
-}
-
-export type ItemData = ProjectData | EntityData | NoteData | ChartData;
+export type ItemData = VideoData;
 
 export interface Item {
   id: string;
@@ -58,8 +26,6 @@ export interface AgentState {
   globalDescription: string;
   lastAction?: string;
   itemsCreated: number;
-  syncSheetId?: string; // Google Sheet ID for auto-sync
-  syncSheetName?: string; // Google Sheet name that was imported from
 }
 
 
