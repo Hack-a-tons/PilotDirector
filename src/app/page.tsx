@@ -24,6 +24,49 @@ export default function PilotDirectorPage() {
 
   const viewState: AgentState = isNonEmptyAgentState(state) ? (state as AgentState) : cachedStateRef.current;
   const [showJsonView, setShowJsonView] = useState<boolean>(false);
+  const [files, setFiles] = useState<any[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
+  const fetchFiles = async () => {
+    try {
+      setLoadingFiles(true);
+      const response = await fetch('/api/files');
+      const data = await response.json();
+      setFiles(data);
+    } catch (error) {
+      console.error('Error fetching files:', error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  useEffect(() => {
+    // Auto-play all videos after files load
+    const videos = document.querySelectorAll('video');
+    videos.forEach(video => {
+      video.muted = true;
+      video.play().catch(() => {
+        // Autoplay blocked, that's fine
+      });
+    });
+  }, [files]);
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Frontend actions for video management
   useCopilotAction({
@@ -151,7 +194,7 @@ export default function PilotDirectorPage() {
               variant="outline"
               onClick={() => setShowJsonView(!showJsonView)}
             >
-              {showJsonView ? "Canvas View" : "JSON View"}
+              {showJsonView ? "Files View" : "JSON View"}
             </Button>
           </div>
         </div>
@@ -164,16 +207,61 @@ export default function PilotDirectorPage() {
             </pre>
           ) : (
             <div>
-              {viewState.items.length === 0 ? (
-                <EmptyState />
+              {loadingFiles ? (
+                <div className="text-center text-gray-500 py-8">Loading files...</div>
+              ) : files.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">No files found</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {viewState.items.map((item) => (
-                    <CardRenderer
-                      key={item.id}
-                      item={item}
-                      onUpdate={handleItemUpdate}
-                    />
+                  {files.map((file) => (
+                    <div key={file.name} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                      {/* Preview/Player */}
+                      <div className="mb-3">
+                        {file.type === 'video' ? (
+                          <video
+                            autoPlay
+                            muted
+                            loop
+                            controls
+                            className="w-full h-48 rounded bg-gray-200"
+                          >
+                            <source src={`/api/videos/${file.name}`} />
+                            Your browser does not support the video tag.
+                          </video>
+                        ) : (
+                          <img
+                            src={`/api/videos/${file.name}`}
+                            alt={file.name}
+                            className="w-full h-48 object-cover rounded bg-gray-200"
+                            onError={(e) => {
+                              console.error('Failed to load image:', file.name);
+                              const target = e.target as HTMLImageElement;
+                              target.style.backgroundColor = '#f3f4f6';
+                              target.alt = `Failed to load ${file.name}`;
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* File Info */}
+                      <div className="space-y-1">
+                        <h3 className="font-semibold text-gray-900 truncate" title={file.name}>
+                          {file.name}
+                        </h3>
+                        
+                        <div className="text-sm text-gray-600 space-y-0.5">
+                          {file.width && file.height && (
+                            <div>Resolution: {file.width}×{file.height}</div>
+                          )}
+                          
+                          {file.type === 'video' && file.duration && (
+                            <div>Duration: {formatDuration(file.duration)}</div>
+                          )}
+                          
+                          <div>Size: {formatSize(file.size)}</div>
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -183,7 +271,7 @@ export default function PilotDirectorPage() {
       </div>
 
       {/* Chat Sidebar */}
-      <div className="w-96 border-l border-gray-200 bg-white">
+      <div className="w-96 border-l border-gray-200 bg-white flex flex-col">
         <CopilotChat
           labels={{
             title: "PilotDirector Assistant",
