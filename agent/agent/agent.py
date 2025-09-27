@@ -256,6 +256,30 @@ def list_videos() -> str:
     except Exception as e:
         return f"Error listing videos: {str(e)}"
 
+def delete_file(filename: str) -> str:
+    """Delete a video or image file."""
+    try:
+        file_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(file_path):
+            return f"Error: File {filename} not found"
+        
+        # Safety check - only allow deletion of video and image files
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+        
+        file_ext = os.path.splitext(filename)[1].lower()
+        if file_ext not in video_extensions + image_extensions:
+            return f"Error: Cannot delete {filename} - only video and image files can be deleted"
+        
+        os.remove(file_path)
+        print(f"[DEV] Deleted file: {filename}")
+        
+        return f"Successfully deleted {filename}"
+    except Exception as e:
+        print(f"[DEV] Exception in delete_file: {str(e)}")
+        return f"Error deleting {filename}: {str(e)}"
+
 def list_images() -> str:
     """List all image files in the videos directory."""
     try:
@@ -346,6 +370,7 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=extract_frame),
     FunctionTool.from_defaults(fn=list_videos),
     FunctionTool.from_defaults(fn=list_images),
+    FunctionTool.from_defaults(fn=delete_file),
 ]
 
 print(f"Backend tools loaded: {len(_backend_tools)} video processing tools")
