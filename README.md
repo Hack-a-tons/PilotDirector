@@ -27,10 +27,15 @@ This is an AI-powered video editing canvas built with LlamaIndex, CopilotKit, an
 - FFmpeg backend integration
 - Azure OpenAI / OpenAI support
 
+✅ **Frontend Video Interface**:
+- Video card display with metadata
+- Video playback in browser
+- Simplified canvas for video management
+- Chat interface for natural language commands
+
 🚧 **In Progress**:
 - Video upload functionality
-- Video display in web interface
-- Frontend video management tools
+- File management integration
 
 ## Usage Examples
 

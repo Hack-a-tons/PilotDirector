@@ -4,6 +4,7 @@ import subprocess
 import json
 from dotenv import load_dotenv
 
+from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.llms.openai import OpenAI
 from llama_index.core.tools import FunctionTool
 from llama_index.protocols.ag_ui.router import get_ag_ui_workflow_router
@@ -176,37 +177,27 @@ def _create_llm():
     
     if azure_endpoint and azure_key:
         # Use Azure OpenAI
-        return OpenAI(
+        return AzureOpenAI(
             model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1"),
-            api_type="azure",
-            api_base=azure_endpoint,
+            deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1"),
+            api_key=azure_key,
+            azure_endpoint=azure_endpoint,
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
-            api_key=azure_key
         )
     else:
         # Use regular OpenAI
         return OpenAI(model="gpt-4.1")
 
-SYSTEM_PROMPT = (
-    "You are PilotDirector, an AI-powered video editing assistant.\n\n"
-    "You help users edit videos using natural language commands. You can:\n"
-    "- List available videos\n"
-    "- Get video information (duration, resolution, size)\n"
-    "- Cut video segments (specify start time and duration)\n"
-    "- Concatenate multiple videos\n"
-    "- Extract frames at specific timestamps\n\n"
-    "IMPORTANT GUIDELINES:\n"
-    "- Always use backend tools to perform video operations\n"
-    "- When users ask to cut videos, ask for clarification if start time or duration is unclear\n"
-    "- For concatenation, list the videos in the order they should be joined\n"
-    "- Time formats: use seconds (e.g., '10' for 10 seconds) or HH:MM:SS format\n"
-    "- Always confirm successful operations and provide the output filename\n"
-    "- If a video file doesn't exist, suggest listing available videos first\n\n"
-    "EXAMPLE COMMANDS:\n"
-    "- 'Cut first 3 seconds from video1.mp4' -> cut_video('video1.mp4', '0', '3', 'video1_cut.mp4')\n"
-    "- 'Concatenate video1.mp4 and video2.mp4' -> concatenate_videos(['video1.mp4', 'video2.mp4'], 'combined.mp4')\n"
-    "- 'Extract frame at 10 seconds from video1.mp4' -> extract_frame('video1.mp4', '10', 'frame.png')\n"
-)
+# Load system prompt from file
+def load_system_prompt():
+    prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "system_prompt.txt")
+    try:
+        with open(prompt_path, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return "You are PilotDirector, an AI-powered video editing assistant."
+
+SYSTEM_PROMPT = load_system_prompt()
 
 agentic_chat_router = get_ag_ui_workflow_router(
     llm=_create_llm(),

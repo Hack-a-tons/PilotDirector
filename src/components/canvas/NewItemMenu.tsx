@@ -1,33 +1,74 @@
-"use client";
-
-import { Plus } from "lucide-react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
-import type { CardType } from "@/lib/canvas/types";
+import { Input } from "@/components/ui/input";
+import { Plus, Upload } from "lucide-react";
 
-export function NewItemMenu({ onSelect, align = "end", className }: { onSelect: (t: CardType) => void; align?: "start" | "end" | "center", className?: string }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="default" className={cn("gap-2 text-base font-semibold bg-card rounded-lg",
-          className)}>
-          <Plus className="size-5" />
-          New
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="min-w-0 w-fit bg-background">
-        <DropdownMenuItem onClick={() => onSelect("project")}>Project</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSelect("entity")}>Entity</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSelect("note")}>Note</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onSelect("chart")}>Chart</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+interface NewItemMenuProps {
+  onCreateVideo: (name: string) => void;
 }
 
-export default NewItemMenu;
+export default function NewItemMenu({ onCreateVideo }: NewItemMenuProps) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [videoName, setVideoName] = useState("");
 
+  const handleCreate = () => {
+    if (videoName.trim()) {
+      onCreateVideo(videoName.trim());
+      setVideoName("");
+      setIsCreating(false);
+    }
+  };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const name = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
+      onCreateVideo(name);
+    }
+  };
 
+  if (isCreating) {
+    return (
+      <div className="flex items-center space-x-2 p-4 bg-white border border-gray-200 rounded-lg">
+        <Input
+          value={videoName}
+          onChange={(e) => setVideoName(e.target.value)}
+          placeholder="Enter video name..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleCreate();
+            if (e.key === "Escape") setIsCreating(false);
+          }}
+          autoFocus
+        />
+        <Button onClick={handleCreate} disabled={!videoName.trim()}>
+          Create
+        </Button>
+        <Button variant="outline" onClick={() => setIsCreating(false)}>
+          Cancel
+        </Button>
+      </div>
+    );
+  }
 
+  return (
+    <div className="flex items-center space-x-2">
+      <Button onClick={() => setIsCreating(true)}>
+        <Plus className="h-4 w-4 mr-2" />
+        New Video
+      </Button>
+      
+      <div className="relative">
+        <input
+          type="file"
+          accept="video/*"
+          onChange={handleFileUpload}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+        <Button variant="outline">
+          <Upload className="h-4 w-4 mr-2" />
+          Upload Video
+        </Button>
+      </div>
+    </div>
+  );
+}
