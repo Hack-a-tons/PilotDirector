@@ -1,28 +1,41 @@
-# Fullstack Agents Hackathon Starter
+# 🎬 PilotDirector
 
-Welcome to the Fullstack Agents hackathon! This starter gives you a complete AI-powered canvas application with real-world integrations. Utilizing [LlamaIndex](https://developers.llamaindex.ai), [Composio](https://docs.composio.dev), and [CopilotKit](https://docs.copilotkit.ai). 
+**Edit videos using natural language commands — powered by AI and FFmpeg.**
 
-## About this starter
-This is a starter template for building AI-powered canvas applications using LlamaIndex, CopilotKit, and Composio. It provides a modern Next.js application with an integrated LlamaIndex agent that manages a visual canvas of interactive cards with real-time AI synchronization and external tool integrations (Google Sheets, for this example) through Composio.
+## The Problem
 
-This is an example application that we built to help you get started quickly. Everything you see can be customized, replaced, augmented or built upon.
+Video editing is complex and time-consuming, requiring specialized skills and software. Even simple tasks like cutting clips, concatenating videos, or extracting frames involve learning complicated interfaces and precise commands.
+
+## The Solution
+
+PilotDirector simplifies video editing by allowing you to use natural language commands through a modern web interface. Upload your videos, then just say what you want: "Cut first 3 seconds from video1", "Concatenate all videos", "Extract frame at 10 seconds" — and get your edited video.
+
+## About this application
+This is an AI-powered video editing canvas built with LlamaIndex, CopilotKit, and FFmpeg. It provides a modern Next.js web interface with an integrated LlamaIndex agent that processes natural language video editing commands and executes them using FFmpeg on the backend.
 
 https://github.com/user-attachments/assets/2a4ec718-b83b-4968-9cbe-7c1fe082e958
 
-### LlamaIndex
-LlamaIndex is a framework for building generative AI applications, in particular Document Agents, i.e. agents that process unstructured data like PDFs, PowerPoints, Word files and more. The core framework has adapters for loading and storing data, while the Workflows framework provides a way to build an agent or multi-agent system and control how data moves around. Both frameworks can make use of LlamaCloud, an enterprise offering that provides RAG and structured data extraction as a service.
+## Features
 
-[LlamaIndex ->](https://composio.dev/)
+- 🎥 **Video Upload**: Upload video files through the web interface
+- 🎬 **Video Display**: View uploaded videos directly in the browser
+- 🗣️ **Natural Language Commands**: Edit videos using simple commands like:
+  - "Cut first 3 seconds from video1"
+  - "Cut last 3 seconds from video2" 
+  - "Concatenate video1 and video2"
+  - "Extract frame at 10 seconds"
+- ⚡ **FFmpeg Integration**: Powerful video processing using FFmpeg
+- 📁 **File Management**: Organize and manage your video files
+- 🤖 **AI-Powered**: LlamaIndex agent processes commands and executes FFmpeg operations
+- 🎨 **Modern UI**: Clean, responsive interface built with Next.js and Tailwind CSS
 
-### Composio
-Composio is the fastest way to enable your AI agents to take real-world actions—without dealing with individual API integrations, authentication flows, or complex tool formatting. It provides access 3000+ tools out of the box across popular apps like Slack, GitHub, Notion, and more.
+## Tech Stack
 
-[More about Composio ->](https://composio.dev/)
-
-### CopilotKit
-CopilotKit connects your app's logic, state, and user context to the AI agents that deliver the animated and interactive part of your app experience — across both embedded UIs and fully headless interfaces. It gives you the tools to build, deploy, and monitor AI-assisted features that feel intuitive, helpful, and deeply integrated.
-
-[More about CopilotKit ->](https://copilotkit.ai)
+- **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
+- **Backend**: Python, LlamaIndex, FastAPI
+- **AI**: Azure OpenAI / OpenAI GPT-4
+- **Video Processing**: FFmpeg
+- **UI Components**: Radix UI, CopilotKit
 
 ## Getting Started
 
@@ -41,11 +54,11 @@ Plug-in these resources to let coding agents help you and our team!
 - [Copilotkit MCP](https://docs.copilotkit.ai/vibe-coding-mcp)
 
 ### Prerequisites
-Before getting started, you'll need to the following.
+Before getting started, you'll need:
 - Node.js 20+ 
 - Python 3.10+
-- OpenAI API Key (LlamaIndex agent; `agent/.env`) ([platform.openai.com/api-keys](https://platform.openai.com/api-keys))
-- Composio API Key & Config ID (external tool integrations; `agent/.env`) ([app.composio.dev/developers](https://app.composio.dev/developers))
+- **FFmpeg** installed on your system
+- Azure OpenAI API Key or OpenAI API Key (`agent/.env`)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Any of the following package managers:
   - [pnpm](https://pnpm.io/installation) (recommended)
@@ -103,16 +116,17 @@ Before getting started, you'll need to the following.
     Copy `agent/.env.example` to `agent/.env`:
 
     ```bash
-    # OpenAI API key
-    OPENAI_API_KEY=""
+    # Azure OpenAI configuration
+    AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/"
+    AZURE_OPENAI_KEY="your-azure-openai-key"
+    AZURE_OPENAI_API_VERSION="2025-01-01-preview"
+    AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4.1"
 
-    # Composio secrets
-    COMPOSIO_API_KEY=""
-    COMPOSIO_GOOGLESHEETS_AUTH_CONFIG_ID=""
-    COMPOSIO_USER_ID="default"
+    # Or use OpenAI directly
+    OPENAI_API_KEY="your-openai-key"
     ```
 
-    > **Note:** The OpenAI API key is required for the LlamaIndex agent to function
+    > **Note:** Either Azure OpenAI or OpenAI API key is required for the LlamaIndex agent to function
 
     #### Frontend (optional)
 
