@@ -18,7 +18,7 @@ def get_video_info(filename: str) -> str:
     try:
         video_path = os.path.join("../videos", filename)
         if not os.path.exists(video_path):
-            return f"Video file {filename} not found"
+            return f"Error: Video file {filename} not found"
         
         cmd = [
             "ffprobe", "-v", "quiet", "-print_format", "json", 
@@ -33,16 +33,23 @@ def get_video_info(filename: str) -> str:
         format_info = data.get("format", {})
         video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
         
+        # Get file stats for modification time
+        import os
+        stat = os.stat(video_path)
+        from datetime import datetime
+        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        
         info = {
             "duration": float(format_info.get("duration", 0)),
             "size": int(format_info.get("size", 0)),
             "width": video_stream.get("width", 0),
             "height": video_stream.get("height", 0),
+            "modified": mod_time,
         }
         
-        return f"Video info for {filename}: Duration: {info['duration']:.2f}s, Size: {info['size']} bytes, Resolution: {info['width']}x{info['height']}"
+        return f"Video info for {filename}: Duration: {info['duration']:.2f}s, Size: {info['size']} bytes ({info['size']/1024/1024:.1f} MB), Resolution: {info['width']}x{info['height']}, Modified: {info['modified']}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error getting video info for {filename}: {str(e)}"
 
 def cut_video(filename: str, start_time: str, duration: str, output_filename: str) -> str:
     """Cut a video segment using ffmpeg."""
@@ -51,7 +58,22 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
         output_path = os.path.join("../videos", output_filename)
         
         if not os.path.exists(input_path):
-            return f"Input video {filename} not found"
+            return f"Error: Input video {filename} not found"
+        
+        # Get video duration first to validate
+        info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
+        info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+        
+        if info_result.returncode == 0:
+            video_duration = float(info_result.stdout.strip())
+            start_seconds = float(start_time)
+            duration_seconds = float(duration)
+            
+            if start_seconds >= video_duration:
+                return f"Error: Start time {start_time}s is beyond video duration ({video_duration:.2f}s)"
+            
+            if start_seconds + duration_seconds > video_duration:
+                return f"Warning: Requested duration extends beyond video end. Cutting from {start_time}s to end of video ({video_duration:.2f}s)"
         
         cmd = [
             "ffmpeg", "-i", input_path, "-ss", start_time, 
@@ -63,9 +85,15 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
         if result.returncode != 0:
             return f"Error cutting video: {result.stderr}"
         
-        return f"Successfully cut {filename} from {start_time} for {duration} seconds, saved as {output_filename}"
+        # Verify output file was created and has reasonable size
+        if os.path.exists(output_path):
+            size = os.path.getsize(output_path)
+            if size < 1000:  # Less than 1KB is suspicious
+                return f"Warning: Output file {output_filename} created but very small ({size} bytes). Check if cut parameters are correct."
+        
+        return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {output_filename}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error cutting video {filename}: {str(e)}"
 
 def concatenate_videos(filenames: List[str], output_filename: str) -> str:
     """Concatenate multiple videos using ffmpeg."""
@@ -105,7 +133,18 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
         output_path = os.path.join("../videos", output_filename)
         
         if not os.path.exists(input_path):
-            return f"Input video {filename} not found"
+            return f"Error: Input video {filename} not found"
+        
+        # Get video duration first to validate timestamp
+        info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
+        info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+        
+        if info_result.returncode == 0:
+            video_duration = float(info_result.stdout.strip())
+            timestamp_seconds = float(timestamp)
+            
+            if timestamp_seconds >= video_duration:
+                return f"Error: Timestamp {timestamp}s is beyond video duration ({video_duration:.2f}s). Video is only {video_duration:.2f} seconds long."
         
         cmd = [
             "ffmpeg", "-i", input_path, "-ss", timestamp, 
@@ -117,12 +156,12 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
         if result.returncode != 0:
             return f"Error extracting frame: {result.stderr}"
         
-        return f"Successfully extracted frame from {filename} at {timestamp}, saved as {output_filename}"
+        return f"Successfully extracted frame from {filename} at {timestamp}s, saved as {output_filename}"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error extracting frame from {filename}: {str(e)}"
 
 def list_videos() -> str:
-    """List all video files in the videos directory."""
+    """List all video files in the videos directory with basic info."""
     try:
         videos_dir = "../videos"
         if not os.path.exists(videos_dir):
@@ -133,14 +172,52 @@ def list_videos() -> str:
         
         for file in os.listdir(videos_dir):
             if any(file.lower().endswith(ext) for ext in video_extensions):
-                videos.append(file)
+                file_path = os.path.join(videos_dir, file)
+                
+                # Get basic info for each video
+                try:
+                    cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration,size", "-of", "csv=p=0", file_path]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        lines = result.stdout.strip().split('\n')
+                        if len(lines) > 0 and ',' in lines[0]:
+                            duration_str, size_str = lines[0].split(',')
+                            duration = float(duration_str) if duration_str else 0
+                            size = int(size_str) if size_str else 0
+                            
+                            # Get modification time
+                            stat = os.stat(file_path)
+                            from datetime import datetime
+                            mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            videos.append({
+                                'name': file,
+                                'duration': duration,
+                                'size': size,
+                                'modified': mod_time
+                            })
+                        else:
+                            videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
+                    else:
+                        videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
+                except:
+                    videos.append({'name': file, 'duration': 0, 'size': 0, 'modified': 'unknown'})
         
         if not videos:
             return "No video files found"
         
-        return f"Available videos: {', '.join(videos)}"
+        # Sort by modification time (most recent first)
+        videos.sort(key=lambda x: x['modified'], reverse=True)
+        
+        result = "Available videos:\n"
+        for video in videos:
+            size_mb = video['size'] / 1024 / 1024 if video['size'] > 0 else 0
+            result += f"- {video['name']}: {video['duration']:.1f}s, {size_mb:.1f}MB, modified: {video['modified']}\n"
+        
+        return result.strip()
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error listing videos: {str(e)}"
 
 # Frontend tool stubs for video management
 def createVideo(name: Annotated[str, "Video name/title"]) -> str:
