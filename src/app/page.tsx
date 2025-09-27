@@ -68,7 +68,16 @@ export default function PilotDirectorPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Frontend actions for video management
+  useCopilotAction({
+    name: "refreshFiles",
+    description: "Refresh the file list after backend operations complete",
+    parameters: [],
+    handler: async () => {
+      await fetchFiles();
+      return "Files refreshed";
+    },
+  });
+
   useCopilotAction({
     name: "createVideo",
     description: "Create a new video item",

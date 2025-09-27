@@ -113,7 +113,7 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
                 print(f"[DEV] Warning: Small output file {unique_output} ({size} bytes)")
                 return f"Warning: Output file {unique_output} created but very small ({size} bytes). Check if cut parameters are correct."
         
-        return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {unique_output}"
+        return f"Successfully cut {filename} from {start_time}s for {duration}s, saved as {unique_output}. Please refresh the file list."
     except Exception as e:
         print(f"[DEV] Exception in cut_video: {str(e)}")
         return f"Error cutting video {filename}: {str(e)}"
@@ -149,7 +149,7 @@ def concatenate_videos(filenames: List[str], output_filename: str) -> str:
             print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error concatenating videos: {result.stderr}"
         
-        return f"Successfully concatenated {len(filenames)} videos into {unique_output}"
+        return f"Successfully concatenated {len(filenames)} videos into {unique_output}. Please refresh the file list."
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -165,21 +165,29 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
         unique_output = generate_unique_filename("../videos", output_filename)
         output_path = os.path.join("../videos", unique_output)
         
-        # Get video duration first to validate timestamp
-        info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
-        info_result = subprocess.run(info_cmd, capture_output=True, text=True)
-        
-        if info_result.returncode == 0:
-            video_duration = float(info_result.stdout.strip())
-            timestamp_seconds = float(timestamp)
+        # Handle "last" frame request
+        if timestamp.lower() in ['last', 'end', 'final']:
+            # Use FFmpeg to extract the last frame without needing duration
+            cmd = [
+                "ffmpeg", "-sseof", "-1", "-i", input_path, 
+                "-vframes", "1", output_path, "-y"
+            ]
+        else:
+            # Get video duration first to validate timestamp for specific times
+            info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True)
             
-            if timestamp_seconds >= video_duration:
-                return f"Error: Timestamp {timestamp}s is beyond video duration ({video_duration:.2f}s). Video is only {video_duration:.2f} seconds long."
-        
-        cmd = [
-            "ffmpeg", "-i", input_path, "-ss", timestamp, 
-            "-vframes", "1", output_path, "-y"
-        ]
+            if info_result.returncode == 0:
+                video_duration = float(info_result.stdout.strip())
+                timestamp_seconds = float(timestamp)
+                
+                if timestamp_seconds >= video_duration:
+                    return f"Error: Timestamp {timestamp}s is beyond video duration ({video_duration:.2f}s). Video is only {video_duration:.2f} seconds long."
+            
+            cmd = [
+                "ffmpeg", "-i", input_path, "-ss", timestamp, 
+                "-vframes", "1", output_path, "-y"
+            ]
         
         print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -188,7 +196,7 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
             print(f"[DEV] FFmpeg error: {result.stderr}")
             return f"Error extracting frame: {result.stderr}"
         
-        return f"Successfully extracted frame from {filename} at {timestamp}s, saved as {unique_output}"
+        return f"Successfully extracted frame from {filename} at {timestamp}, saved as {unique_output}. Please refresh the file list."
     except Exception as e:
         print(f"[DEV] Exception in extract_frame: {str(e)}")
         return f"Error extracting frame from {filename}: {str(e)}"
@@ -275,7 +283,7 @@ def delete_file(filename: str) -> str:
         os.remove(file_path)
         print(f"[DEV] Deleted file: {filename}")
         
-        return f"Successfully deleted {filename}"
+        return f"Successfully deleted {filename}. Please refresh the file list."
     except Exception as e:
         print(f"[DEV] Exception in delete_file: {str(e)}")
         return f"Error deleting {filename}: {str(e)}"
