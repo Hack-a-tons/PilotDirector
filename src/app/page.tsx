@@ -2,13 +2,22 @@
 
 import { useCoAgent, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
-import CardRenderer from "@/components/canvas/CardRenderer";
-import { EmptyState } from "@/components/empty-state";
-import type { AgentState, Item, VideoData } from "@/lib/canvas/types";
+import Image from "next/image";
+import type { AgentState, Item } from "@/lib/canvas/types";
 import { initialState, isNonEmptyAgentState, defaultDataFor } from "@/lib/canvas/state";
+
+interface FileItem {
+  name: string;
+  type: 'video' | 'image';
+  size: number;
+  modified: string;
+  duration?: number;
+  width?: number;
+  height?: number;
+}
 
 export default function PilotDirectorPage() {
   const { state, setState } = useCoAgent<AgentState>({
@@ -25,7 +34,7 @@ export default function PilotDirectorPage() {
 
   const viewState: AgentState = isNonEmptyAgentState(state) ? (state as AgentState) : cachedStateRef.current;
   const [showJsonView, setShowJsonView] = useState<boolean>(false);
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
   const fetchFiles = async () => {
@@ -71,12 +80,12 @@ export default function PilotDirectorPage() {
 
   useCopilotAction({
     name: "refreshFiles",
-    description: "Refresh the file display in the center panel",
+    description: "Refresh the file display when user requests refresh",
     parameters: [],
     handler: async () => {
-      console.log("[DEBUG] refreshFiles action called");
+      console.log("[DEBUG] refreshFiles action called by AI");
       await fetchFiles();
-      return "File display has been refreshed successfully";
+      return "File display refreshed successfully";
     },
   });
 
@@ -96,7 +105,8 @@ export default function PilotDirectorPage() {
       };
 
       setState((prevState) => ({
-        ...prevState,
+        globalTitle: prevState?.globalTitle || "PilotDirector",
+        globalDescription: prevState?.globalDescription || "AI Video Editor",
         items: [...(prevState?.items || []), newItem],
         itemsCreated: (prevState?.itemsCreated || 0) + 1,
         lastAction: `Created video: ${name}`,
@@ -114,8 +124,10 @@ export default function PilotDirectorPage() {
     ],
     handler: async ({ itemId }: { itemId: string }) => {
       setState((prevState) => ({
-        ...prevState,
+        globalTitle: prevState?.globalTitle || "PilotDirector",
+        globalDescription: prevState?.globalDescription || "AI Video Editor",
         items: (prevState?.items || []).filter(item => item.id !== itemId),
+        itemsCreated: prevState?.itemsCreated || 0,
         lastAction: `Deleted video: ${itemId}`,
       }));
 
@@ -132,10 +144,12 @@ export default function PilotDirectorPage() {
     ],
     handler: async ({ itemId, name }: { itemId: string; name: string }) => {
       setState((prevState) => ({
-        ...prevState,
+        globalTitle: prevState?.globalTitle || "PilotDirector",
+        globalDescription: prevState?.globalDescription || "AI Video Editor",
         items: (prevState?.items || []).map(item =>
           item.id === itemId ? { ...item, name } : item
         ),
+        itemsCreated: prevState?.itemsCreated || 0,
         lastAction: `Set video name: ${name}`,
       }));
 
@@ -151,8 +165,10 @@ export default function PilotDirectorPage() {
     ],
     handler: async ({ title }: { title: string }) => {
       setState((prevState) => ({
-        ...prevState,
         globalTitle: title,
+        globalDescription: prevState?.globalDescription || "AI Video Editor",
+        items: prevState?.items || [],
+        itemsCreated: prevState?.itemsCreated || 0,
         lastAction: `Set global title: ${title}`,
       }));
 
@@ -168,23 +184,16 @@ export default function PilotDirectorPage() {
     ],
     handler: async ({ description }: { description: string }) => {
       setState((prevState) => ({
-        ...prevState,
+        globalTitle: prevState?.globalTitle || "PilotDirector",
         globalDescription: description,
+        items: prevState?.items || [],
+        itemsCreated: prevState?.itemsCreated || 0,
         lastAction: `Set global description: ${description}`,
       }));
 
       return `Set global description: ${description}`;
     },
   });
-
-  const handleItemUpdate = useCallback((id: string, updates: Partial<Item>) => {
-    setState((prevState) => ({
-      ...prevState,
-      items: (prevState?.items || []).map(item =>
-        item.id === id ? { ...item, ...updates } : item
-      ),
-    }));
-  }, [setState]);
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -250,15 +259,14 @@ export default function PilotDirectorPage() {
                             Your browser does not support the video tag.
                           </video>
                         ) : (
-                          <img
+                          <Image
                             src={`/api/videos/${file.name}`}
                             alt={file.name}
+                            width={320}
+                            height={192}
                             className="w-full h-48 object-cover rounded bg-gray-200"
-                            onError={(e) => {
+                            onError={() => {
                               console.error('Failed to load image:', file.name);
-                              const target = e.target as HTMLImageElement;
-                              target.style.backgroundColor = '#f3f4f6';
-                              target.alt = `Failed to load ${file.name}`;
                             }}
                           />
                         )}

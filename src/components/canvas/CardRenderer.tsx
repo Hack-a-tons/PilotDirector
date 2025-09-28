@@ -6,7 +6,7 @@ interface CardRendererProps {
   onUpdate?: (id: string, updates: Partial<Item>) => void;
 }
 
-export default function CardRenderer({ item, onUpdate }: CardRendererProps) {
+export default function CardRenderer({ item }: CardRendererProps) {
   const videoData = item.data as VideoData;
 
   return (

@@ -4,7 +4,7 @@ import { join } from 'path';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { filename: string } }
+  { params }: { params: Promise<{ filename: string }> }
 ) {
   try {
     const { filename } = await params;
@@ -41,7 +41,7 @@ export async function GET(
       
       const stream = createReadStream(filePath, { start, end });
       
-      return new NextResponse(stream as any, {
+      return new NextResponse(stream as unknown as ReadableStream, {
         status: 206,
         headers: {
           'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -54,7 +54,7 @@ export async function GET(
       // Serve full file (for images or non-range video requests)
       const stream = createReadStream(filePath);
       
-      return new NextResponse(stream as any, {
+      return new NextResponse(stream as unknown as ReadableStream, {
         headers: {
           'Content-Length': fileSize.toString(),
           'Content-Type': contentType,

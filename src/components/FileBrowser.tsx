@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Image from 'next/image';
 
 interface FileItem {
   name: string;
@@ -89,15 +90,12 @@ export default function FileBrowser() {
                   </div>
                 ) : (
                   <div className="relative">
-                    <img
+                    <Image
                       src={`/api/videos/${file.name}`}
                       alt={file.name}
+                      width={320}
+                      height={128}
                       className="w-full h-32 object-cover rounded bg-gray-200"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        target.nextElementSibling?.classList.remove('hidden');
-                      }}
                     />
                     <div className="hidden flex items-center justify-center h-32 bg-gray-200 rounded">
                       <ImageIcon className="h-8 w-8 text-gray-400" />

@@ -23,7 +23,15 @@ export async function GET() {
         
         if (!isVideo && !isImage) return null;
         
-        let metadata = {
+        let metadata: {
+          name: string;
+          type: string;
+          size: number;
+          modified: string;
+          duration?: number;
+          width?: number;
+          height?: number;
+        } = {
           name: file,
           type: isVideo ? 'video' : 'image',
           size: fileStat.size,
@@ -36,7 +44,7 @@ export async function GET() {
           
           if (isVideo) {
             const format = data.format || {};
-            const videoStream = data.streams?.find((s: any) => s.codec_type === 'video') || {};
+            const videoStream = data.streams?.find((s: { codec_type: string }) => s.codec_type === 'video') || {};
             metadata = {
               ...metadata,
               duration: parseFloat(format.duration || '0'),
@@ -59,7 +67,7 @@ export async function GET() {
       })
     );
     
-    const validFiles = fileData.filter(Boolean);
+    const validFiles = fileData.filter((file): file is NonNullable<typeof file> => Boolean(file));
     validFiles.sort((a, b) => a.name.localeCompare(b.name));
     
     return NextResponse.json(validFiles);
