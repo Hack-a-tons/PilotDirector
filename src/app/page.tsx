@@ -4,7 +4,7 @@ import { useCoAgent, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import Image from "next/image";
 import { FrameByFramePlayer } from "@/components/FrameByFramePlayer";
 import type { AgentState, Item } from "@/lib/canvas/types";
@@ -18,6 +18,8 @@ interface FileItem {
   duration?: number;
   width?: number;
   height?: number;
+  fps?: number;
+  frameCount?: number;
 }
 
 export default function PilotDirectorPage() {

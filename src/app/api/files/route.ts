@@ -36,6 +36,8 @@ export async function GET() {
           duration?: number;
           width?: number;
           height?: number;
+          fps?: number;
+          frameCount?: number;
         } = {
           name: file,
           type: isVideo ? 'video' : 'image',

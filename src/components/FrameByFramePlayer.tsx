@@ -58,7 +58,7 @@ export const FrameByFramePlayer: React.FC<FrameByFramePlayerProps> = ({
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
     };
-  }, [fps]);
+  }, [fps, propFps, propFrameCount]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -91,7 +91,7 @@ export const FrameByFramePlayer: React.FC<FrameByFramePlayerProps> = ({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isHovered]);
+  }); // Removed dependency array - effect runs on every render but that's fine for event listeners
 
   const stepForward = () => {
     const video = videoRef.current;
