@@ -379,6 +379,70 @@ def rotate_media(filename: str, output_filename: str, angle: int) -> str:
         print(f"[DEV] Exception in rotate_media: {str(e)}")
         return f"Error rotating {filename}: {str(e)}"
 
+def recode_video(filename: str, output_filename: str, format: str = "mp4", quality: str = "medium") -> str:
+    """Recode video to different format/quality. Format: mp4, webm, avi. Quality: high, medium, low, 720p, 1080p."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        # Auto-generate output filename if not provided with extension
+        if not output_filename.endswith(('.mp4', '.webm', '.avi', '.mov')):
+            base_name = os.path.splitext(output_filename)[0]
+            output_filename = f"{base_name}.{format}"
+        
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        # Build FFmpeg command based on quality/resolution
+        cmd = ["ffmpeg", "-i", input_path]
+        
+        if quality.lower() == "720p":
+            cmd.extend(["-vf", "scale=-1:720", "-crf", "23"])
+        elif quality.lower() == "1080p":
+            cmd.extend(["-vf", "scale=-1:1080", "-crf", "20"])
+        elif quality.lower() == "high":
+            cmd.extend(["-crf", "18"])  # High quality
+        elif quality.lower() == "medium":
+            cmd.extend(["-crf", "23"])  # Medium quality (default)
+        elif quality.lower() == "low":
+            cmd.extend(["-crf", "28"])  # Low quality, smaller file
+        else:
+            cmd.extend(["-crf", "23"])  # Default to medium
+        
+        # Add codec settings based on format
+        if format.lower() == "mp4":
+            cmd.extend(["-c:v", "libx264", "-c:a", "aac"])
+        elif format.lower() == "webm":
+            cmd.extend(["-c:v", "libvpx-vp9", "-c:a", "libopus"])
+        elif format.lower() in ["avi", "mov"]:
+            cmd.extend(["-c:v", "libx264", "-c:a", "aac"])
+        
+        # Add output and overwrite flag
+        cmd.extend([output_path, "-y"])
+        
+        print(f"[DEV] Executing FFmpeg recode: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            return f"Error recoding video: {result.stderr}"
+        
+        # Get file sizes for comparison
+        try:
+            original_size = os.path.getsize(input_path) / (1024 * 1024)  # MB
+            new_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+            compression = ((original_size - new_size) / original_size) * 100
+            
+            return f"Successfully recoded {filename} to {unique_output} ({quality} quality). Original: {original_size:.1f}MB → New: {new_size:.1f}MB ({compression:.1f}% smaller). Please refresh the file list."
+        except:
+            return f"Successfully recoded {filename} to {unique_output} ({quality} quality). Please refresh the file list."
+            
+    except Exception as e:
+        print(f"[DEV] Exception in recode_video: {str(e)}")
+        return f"Error recoding {filename}: {str(e)}"
+
 def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> str:
     """Crop an image to remove black bars or borders. crop_type: 'auto', 'top-bottom', 'left-right', or 'manual'."""
     try:
@@ -581,6 +645,7 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=resize_media),
     FunctionTool.from_defaults(fn=change_aspect_ratio),
     FunctionTool.from_defaults(fn=rotate_media),
+    FunctionTool.from_defaults(fn=recode_video),
     FunctionTool.from_defaults(fn=crop_image),
     FunctionTool.from_defaults(fn=list_videos),
     FunctionTool.from_defaults(fn=list_images),
