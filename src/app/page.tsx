@@ -4,8 +4,9 @@ import { useCoAgent, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import Image from "next/image";
+import { FrameByFramePlayer } from "@/components/FrameByFramePlayer";
 import type { AgentState, Item } from "@/lib/canvas/types";
 import { initialState, isNonEmptyAgentState, defaultDataFor } from "@/lib/canvas/state";
 
@@ -248,16 +249,12 @@ export default function PilotDirectorPage() {
                       {/* Preview/Player */}
                       <div className="mb-3">
                         {file.type === 'video' ? (
-                          <video
-                            autoPlay
-                            muted
-                            loop
-                            controls
-                            className="w-full h-48 rounded bg-gray-200"
-                          >
-                            <source src={`/api/videos/${file.name}`} />
-                            Your browser does not support the video tag.
-                          </video>
+                          <FrameByFramePlayer 
+                            src={`/api/videos/${file.name}`}
+                            className="w-full"
+                            fps={file.fps}
+                            frameCount={file.frameCount}
+                          />
                         ) : (
                           <Image
                             src={`/api/videos/${file.name}`}
@@ -278,16 +275,28 @@ export default function PilotDirectorPage() {
                           {file.name}
                         </h3>
                         
-                        <div className="text-sm text-gray-600 space-y-0.5">
+                        <div className="text-sm text-gray-600">
+                          {/* Compact single line: Resolution | Duration/Info | Size */}
                           {file.width && file.height && (
-                            <div>Resolution: {file.width}×{file.height}</div>
+                            <span>{file.width}×{file.height}</span>
                           )}
                           
                           {file.type === 'video' && file.duration && (
-                            <div>Duration: {formatDuration(file.duration)}</div>
+                            <>
+                              {file.width && file.height && <span>&nbsp;|&nbsp;</span>}
+                              <span>
+                                {formatDuration(file.duration)}
+                                {file.fps && file.frameCount ? (
+                                  <span> {file.frameCount}f @{file.fps}fps</span>
+                                ) : (
+                                  <span> {Math.ceil(file.duration * 30)}f @~30fps</span>
+                                )}
+                              </span>
+                            </>
                           )}
                           
-                          <div>Size: {formatSize(file.size)}</div>
+                          <span>&nbsp;|&nbsp;</span>
+                          <span>{formatSize(file.size)}</span>
                         </div>
                       </div>
                     </div>

@@ -34,7 +34,6 @@ def get_video_info(filename: str) -> str:
         video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
         
         # Get file stats for modification time
-        import os
         stat = os.stat(video_path)
         from datetime import datetime
         mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
@@ -118,13 +117,19 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
         print(f"[DEV] Exception in cut_video: {str(e)}")
         return f"Error cutting video {filename}: {str(e)}"
 
-def concatenate_videos(filenames: List[str], output_filename: str) -> str:
+def concatenate_videos(filenames: List[str], output_filename: str, preserve_order: bool = False) -> str:
     """Concatenate multiple videos using ffmpeg."""
     try:
+        # Only sort alphabetically if order is not explicitly specified by user
+        if preserve_order:
+            sorted_filenames = filenames  # Keep user-specified order
+        else:
+            sorted_filenames = sorted(filenames)  # Sort alphabetically for "all videos"
+        
         # Create a temporary file list
         file_list_path = "../videos/temp_filelist.txt"
         with open(file_list_path, "w") as f:
-            for filename in filenames:
+            for filename in sorted_filenames:
                 video_path = os.path.join("../videos", filename)
                 if os.path.exists(video_path):
                     f.write(f"file '{filename}'\n")
@@ -204,8 +209,10 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
 def list_videos() -> str:
     """List all video files in the videos directory with basic info."""
     try:
+        print(f"[DEV] list_videos() called - starting execution")
         videos_dir = "../videos"
         if not os.path.exists(videos_dir):
+            print(f"[DEV] Videos directory not found: {videos_dir}")
             return "Videos directory not found"
         
         video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
@@ -214,8 +221,12 @@ def list_videos() -> str:
                            '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
         videos = []
         
-        for file in os.listdir(videos_dir):
+        all_files = os.listdir(videos_dir)
+        print(f"[DEV] Found {len(all_files)} total files in directory")
+        
+        for file in all_files:
             if any(file.lower().endswith(ext) for ext in video_extensions):
+                print(f"[DEV] Processing video file: {file}")
                 file_path = os.path.join(videos_dir, file)
                 
                 # Get basic info for each video
@@ -233,6 +244,22 @@ def list_videos() -> str:
                         width = video_stream.get("width", 0)
                         height = video_stream.get("height", 0)
                         
+                        # Get FPS and calculate frame count
+                        fps = 30.0  # Default
+                        if video_stream.get("r_frame_rate"):
+                            try:
+                                fps_str = video_stream["r_frame_rate"]
+                                if '/' in fps_str:
+                                    num, den = fps_str.split('/')
+                                    fps = float(num) / float(den)
+                                else:
+                                    fps = float(fps_str)
+                                fps = round(fps, 2)
+                            except:
+                                fps = 30.0
+                        
+                        frame_count = int(duration * fps) if duration > 0 else 0
+                        
                         # Get modification time
                         stat = os.stat(file_path)
                         from datetime import datetime
@@ -244,12 +271,14 @@ def list_videos() -> str:
                             'size': size,
                             'width': width,
                             'height': height,
+                            'fps': fps,
+                            'frame_count': frame_count,
                             'modified': mod_time
                         })
                     else:
-                        videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'modified': 'unknown'})
+                        videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'fps': 0, 'frame_count': 0, 'modified': 'unknown'})
                 except:
-                    videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'modified': 'unknown'})
+                    videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'fps': 0, 'frame_count': 0, 'modified': 'unknown'})
         
         if not videos:
             return "No video files found"
@@ -261,7 +290,8 @@ def list_videos() -> str:
         for video in videos:
             size_mb = video['size'] / 1024 / 1024 if video['size'] > 0 else 0
             resolution = f"{video['width']}x{video['height']}" if video['width'] > 0 else "unknown"
-            result += f"- {video['name']}: {video['duration']:.1f}s, {size_mb:.1f}MB, {resolution}, modified: {video['modified']}\n"
+            fps_info = f" ({video['frame_count']}f @{video['fps']}fps)" if video['fps'] > 0 else ""
+            result += f"- {video['name']}: {video['duration']:.1f}s{fps_info}, {size_mb:.1f}MB, {resolution}, modified: {video['modified']}\n"
         
         return result.strip()
     except Exception as e:
@@ -533,6 +563,323 @@ def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> 
         print(f"[DEV] Exception in crop_image: {str(e)}")
         return f"Error cropping image {filename}: {str(e)}"
 
+def trim_empty_frames(filename: str, output_filename: str = None) -> str:
+    """Detect and remove empty/black frames from the beginning and end of a video."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        if not output_filename:
+            base_name = os.path.splitext(filename)[0]
+            output_filename = f"{base_name}_trimmed.mp4"
+        
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        print(f"[DEV] Detecting empty frames in {filename}")
+        
+        # Detect black frames at start and end
+        # Use blackdetect filter to find black/empty frames
+        cmd = [
+            "ffmpeg", "-i", input_path,
+            "-vf", "blackdetect=d=0.1:pix_th=0.1",
+            "-f", "null", "-"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # Parse blackdetect output to find start and end trim points
+        black_periods = []
+        for line in result.stderr.split('\n'):
+            if 'blackdetect' in line and 'black_start:' in line:
+                try:
+                    # Extract black_start and black_end times
+                    parts = line.split()
+                    start_time = None
+                    end_time = None
+                    
+                    for part in parts:
+                        if part.startswith('black_start:'):
+                            start_time = float(part.split(':')[1])
+                        elif part.startswith('black_end:'):
+                            end_time = float(part.split(':')[1])
+                    
+                    if start_time is not None and end_time is not None:
+                        black_periods.append((start_time, end_time))
+                except:
+                    continue
+        
+        # Get video duration
+        duration_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
+        duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+        total_duration = float(duration_result.stdout.strip()) if duration_result.returncode == 0 else 0
+        
+        # Determine trim points
+        trim_start = 0.0
+        trim_end = total_duration
+        
+        # Find black frames at the beginning
+        for start, end in black_periods:
+            if start <= 0.1:  # Black frames at the very beginning
+                trim_start = max(trim_start, end)
+        
+        # Find black frames at the end
+        for start, end in black_periods:
+            if end >= total_duration - 0.1:  # Black frames at the very end
+                trim_end = min(trim_end, start)
+        
+        # Only trim if we found empty frames
+        if trim_start > 0 or trim_end < total_duration:
+            print(f"[DEV] Trimming empty frames: start={trim_start:.3f}s, end={trim_end:.3f}s")
+            
+            # Build trim command
+            cmd = ["ffmpeg", "-i", input_path]
+            
+            if trim_start > 0:
+                cmd.extend(["-ss", str(trim_start)])
+            
+            if trim_end < total_duration:
+                duration = trim_end - trim_start
+                cmd.extend(["-t", str(duration)])
+            
+            cmd.extend([
+                "-c:v", "libx264", "-crf", "18",
+                "-c:a", "aac", "-b:a", "128k",
+                output_path, "-y"
+            ])
+            
+            print(f"[DEV] Trimming command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return f"Successfully trimmed empty frames from {filename} → {unique_output}. Removed {trim_start:.3f}s from start and {total_duration - trim_end:.3f}s from end."
+            else:
+                return f"Error trimming {filename}: {result.stderr}"
+        else:
+            return f"No empty frames detected in {filename} - no trimming needed."
+            
+    except Exception as e:
+        print(f"[DEV] Exception in trim_empty_frames: {str(e)}")
+        return f"Error trimming empty frames from {filename}: {str(e)}"
+
+def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
+    """Split video into scenes based on scene change detection. Sensitivity: 0.1 (very sensitive) to 1.0 (less sensitive)."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        base_name = os.path.splitext(filename)[0]
+        
+        # Step 1: Detect scene changes and get timestamps
+        print(f"[DEV] Detecting scenes in {filename} with sensitivity {sensitivity}")
+        cmd = [
+            "ffmpeg", "-i", input_path,
+            "-vf", f"select='gt(scene,{sensitivity})',showinfo",
+            "-f", "null", "-"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            return f"Error detecting scenes: {result.stderr}"
+        
+        # Extract timestamps from showinfo output
+        timestamps = [0.0]  # Always start from beginning
+        for line in result.stderr.split('\n'):
+            if 'pts_time:' in line:
+                try:
+                    pts_time = float(line.split('pts_time:')[1].split()[0])
+                    timestamps.append(pts_time)
+                except:
+                    continue
+        
+        if len(timestamps) <= 1:
+            return f"No scene changes detected in {filename}. Try lowering sensitivity (e.g., 0.1 for more sensitive detection)."
+        
+        # Remove duplicates and sort
+        timestamps = sorted(list(set(timestamps)))
+        
+        print(f"[DEV] Found {len(timestamps)-1} scene changes at: {timestamps[1:]}")
+        
+        # Get video FPS for frame calculations
+        fps_cmd = ["ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", input_path]
+        fps_result = subprocess.run(fps_cmd, capture_output=True, text=True)
+        
+        fps = 30.0  # Default fallback
+        if fps_result.returncode == 0 and fps_result.stdout.strip():
+            try:
+                fps_str = fps_result.stdout.strip()
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den)
+                else:
+                    fps = float(fps_str)
+                print(f"[DEV] Detected video FPS: {fps}")
+            except:
+                print(f"[DEV] Could not parse FPS '{fps_str}', using default 30")
+        
+        # Step 2: Split video into scenes without dropping frames by default
+        scene_files = []
+        errors = []
+        
+        for i in range(len(timestamps)):
+            start_time = timestamps[i]
+            
+            # Determine end time (next scene or end of video)
+            if i < len(timestamps) - 1:
+                end_time = timestamps[i + 1]
+                duration = end_time - start_time
+                scene_filename = f"{base_name}_scene_{i+1:02d}.mp4"
+            else:
+                # Last scene - go to end of video
+                scene_filename = f"{base_name}_scene_{i+1:02d}.mp4"
+                duration = None
+            
+            unique_output = generate_unique_filename("../videos", scene_filename)
+            output_path = os.path.join("../videos", unique_output)
+            
+            # Build FFmpeg command for this scene with re-encoding for precision
+            cmd = ["ffmpeg", "-i", input_path, "-ss", str(start_time)]
+            
+            if duration is not None:
+                cmd.extend(["-t", str(duration)])
+            
+            # Re-encode for precise cuts and consistent quality
+            cmd.extend([
+                "-c:v", "libx264", "-crf", "18",  # High quality video
+                "-c:a", "aac", "-b:a", "128k",   # Good quality audio
+                "-avoid_negative_ts", "make_zero",  # Fix timestamp issues
+                output_path, "-y"
+            ])
+            
+            print(f"[DEV] Extracting scene {i+1}: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                # Auto-trim empty frames from the scene
+                print(f"[DEV] Auto-trimming empty frames from scene {i+1}")
+                trimmed_filename = f"{base_name}_scene_{i+1:02d}_clean.mp4"
+                trimmed_output = generate_unique_filename("../videos", trimmed_filename)
+                trimmed_path = os.path.join("../videos", trimmed_output)
+                
+                # More aggressive detection for gray/empty frames
+                # Use multiple detection methods
+                
+                # Method 1: blackdetect with lower threshold for gray frames
+                detect_cmd = [
+                    "ffmpeg", "-i", output_path,
+                    "-vf", "blackdetect=d=0.01:pix_th=0.15",
+                    "-f", "null", "-"
+                ]
+                
+                detect_result = subprocess.run(detect_cmd, capture_output=True, text=True)
+                
+                # Method 2: Check first frame specifically for low variance (gray/uniform)
+                first_frame_cmd = [
+                    "ffmpeg", "-i", output_path, "-vframes", "1", "-vf", 
+                    "crop=iw:ih:0:0,scale=1:1,format=gray,metadata=print:file=-",
+                    "-f", "null", "-"
+                ]
+                
+                first_frame_result = subprocess.run(first_frame_cmd, capture_output=True, text=True)
+                
+                # Parse blackdetect results
+                black_periods = []
+                for line in detect_result.stderr.split('\n'):
+                    if 'blackdetect' in line and 'black_start:' in line:
+                        try:
+                            parts = line.split()
+                            start_time = None
+                            end_time = None
+                            
+                            for part in parts:
+                                if part.startswith('black_start:'):
+                                    start_time = float(part.split(':')[1])
+                                elif part.startswith('black_end:'):
+                                    end_time = float(part.split(':')[1])
+                            
+                            if start_time is not None and end_time is not None:
+                                black_periods.append((start_time, end_time))
+                        except:
+                            continue
+                
+                # Get scene duration and FPS
+                duration_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", output_path]
+                duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+                scene_duration = float(duration_result.stdout.strip()) if duration_result.returncode == 0 else 0
+                
+                # Calculate trim points
+                trim_start = 0.0
+                trim_end = scene_duration
+                
+                # Always trim at least first frame if scene is long enough
+                one_frame_time = 1.0 / fps
+                if scene_duration > one_frame_time * 3:  # Only if scene has more than 3 frames
+                    trim_start = one_frame_time  # Remove first frame by default
+                
+                # Find additional empty frames at beginning
+                for start, end in black_periods:
+                    if start <= 0.2:  # Empty frames near the beginning
+                        trim_start = max(trim_start, end)
+                
+                # Find empty frames at end
+                for start, end in black_periods:
+                    if end >= scene_duration - 0.2:  # Empty frames near the end
+                        trim_end = min(trim_end, start)
+                
+                # Apply trimming
+                if trim_start > 0.01 or trim_end < scene_duration - 0.01:
+                    print(f"[DEV] Trimming scene {i+1}: removing {trim_start:.3f}s from start, {scene_duration - trim_end:.3f}s from end")
+                    
+                    final_cmd = ["ffmpeg", "-i", output_path]
+                    
+                    if trim_start > 0:
+                        final_cmd.extend(["-ss", str(trim_start)])
+                    
+                    if trim_end < scene_duration:
+                        final_duration = trim_end - trim_start
+                        final_cmd.extend(["-t", str(final_duration)])
+                    
+                    final_cmd.extend([
+                        "-c:v", "libx264", "-crf", "18",
+                        "-c:a", "aac", "-b:a", "128k",
+                        trimmed_path, "-y"
+                    ])
+                    
+                    final_result = subprocess.run(final_cmd, capture_output=True, text=True)
+                    
+                    if final_result.returncode == 0:
+                        # Replace original with trimmed version
+                        os.remove(output_path)
+                        os.rename(trimmed_path, output_path)
+                        print(f"[DEV] Scene {i+1} trimmed successfully")
+                    else:
+                        print(f"[DEV] Failed to trim scene {i+1}: {final_result.stderr}")
+                else:
+                    print(f"[DEV] Scene {i+1} - no trimming needed")
+                
+                scene_files.append(unique_output)
+            else:
+                errors.append(f"Scene {i+1}: {result.stderr}")
+        
+        # Prepare result message
+        if scene_files:
+            result_msg = f"Successfully split {filename} into {len(scene_files)} scenes: {', '.join(scene_files)}"
+            if errors:
+                result_msg += f"\nErrors: {'; '.join(errors)}"
+            result_msg += ". Please refresh the file list."
+            return result_msg
+        else:
+            return f"Failed to split {filename} into scenes. Errors: {'; '.join(errors)}"
+            
+    except Exception as e:
+        print(f"[DEV] Exception in split_by_scenes: {str(e)}")
+        return f"Error splitting {filename} by scenes: {str(e)}"
+
 def delete_files_pattern(pattern: str) -> str:
     """Delete multiple files matching a pattern (e.g., '*.png', 'video*.mp4', 'all png files')."""
     try:
@@ -736,6 +1083,8 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=rotate_media),
     FunctionTool.from_defaults(fn=recode_video),
     FunctionTool.from_defaults(fn=crop_image),
+    FunctionTool.from_defaults(fn=trim_empty_frames),
+    FunctionTool.from_defaults(fn=split_by_scenes),
     FunctionTool.from_defaults(fn=list_videos),
     FunctionTool.from_defaults(fn=list_images),
     FunctionTool.from_defaults(fn=delete_file),

@@ -50,11 +50,26 @@ export async function GET() {
           if (isVideo) {
             const format = data.format || {};
             const videoStream = data.streams?.find((s: { codec_type: string }) => s.codec_type === 'video') || {};
+            
+            // Get actual FPS
+            let fps = 30; // Default
+            if (videoStream.r_frame_rate) {
+              const [num, den] = videoStream.r_frame_rate.split('/').map(Number);
+              if (den && den > 0) {
+                fps = Math.round((num / den) * 100) / 100; // Round to 2 decimals
+              }
+            }
+            
+            const duration = parseFloat(format.duration || '0');
+            const frameCount = Math.round(duration * fps);
+            
             metadata = {
               ...metadata,
-              duration: parseFloat(format.duration || '0'),
+              duration,
               width: videoStream.width || 0,
               height: videoStream.height || 0,
+              fps,
+              frameCount,
             };
           } else {
             const stream = data.streams?.[0] || {};
