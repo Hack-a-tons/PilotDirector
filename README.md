@@ -15,7 +15,9 @@ This is an AI-powered video editing canvas built with LlamaIndex, CopilotKit, an
 
 **Built for the [Fullstack Agents Hackathon](https://luma.com/k3gytona) on September 27, 2025 at Microsoft in Mountain View.**
 
-🎬 **[Watch the Demo Video](https://youtu.be/SP3Ba8jMY4M)**
+## 🎬 Demo
+
+[![PilotDirector Demo](https://img.youtube.com/vi/SP3Ba8jMY4M/0.jpg)](https://youtu.be/SP3Ba8jMY4M)
 
 ## Current Implementation Status
 

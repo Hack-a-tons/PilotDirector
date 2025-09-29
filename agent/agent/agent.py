@@ -264,6 +264,208 @@ def list_videos() -> str:
     except Exception as e:
         return f"Error listing videos: {str(e)}"
 
+def resize_media(filename: str, output_filename: str, width: int = 0, height: int = 0, scale: str = "") -> str:
+    """Resize video or image. Use width/height for exact size, or scale for proportional (e.g. '0.5' for 50%)."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        if scale:
+            # Proportional scaling
+            filter_str = f"scale=iw*{scale}:ih*{scale}"
+        elif width > 0 and height > 0:
+            # Exact dimensions
+            filter_str = f"scale={width}:{height}"
+        elif width > 0:
+            # Width only, maintain aspect ratio
+            filter_str = f"scale={width}:-1"
+        elif height > 0:
+            # Height only, maintain aspect ratio
+            filter_str = f"scale=-1:{height}"
+        else:
+            return "Error: Must specify width, height, or scale parameter"
+        
+        cmd = ["ffmpeg", "-i", input_path, "-vf", filter_str, output_path, "-y"]
+        
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            return f"Error resizing: {result.stderr}"
+        
+        return f"Successfully resized {filename}, saved as {unique_output}. Please refresh the file list."
+    except Exception as e:
+        print(f"[DEV] Exception in resize_media: {str(e)}")
+        return f"Error resizing {filename}: {str(e)}"
+
+def change_aspect_ratio(filename: str, output_filename: str, ratio: str, method: str = "pad") -> str:
+    """Change aspect ratio of video/image. Ratio like '16:9', '4:3', '1:1'. Method: 'pad' (add bars) or 'crop'."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        # Parse aspect ratio
+        try:
+            w_ratio, h_ratio = map(int, ratio.split(':'))
+        except:
+            return f"Error: Invalid aspect ratio '{ratio}'. Use format like '16:9' or '4:3'"
+        
+        if method.lower() == "pad":
+            # Add black bars to fit aspect ratio
+            filter_str = f"pad=ih*{w_ratio}/{h_ratio}:ih:(ow-iw)/2:(oh-ih)/2"
+        elif method.lower() == "crop":
+            # Crop to fit aspect ratio
+            filter_str = f"crop=ih*{w_ratio}/{h_ratio}:ih"
+        else:
+            return f"Error: Invalid method '{method}'. Use 'pad' or 'crop'"
+        
+        cmd = ["ffmpeg", "-i", input_path, "-vf", filter_str, output_path, "-y"]
+        
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            return f"Error changing aspect ratio: {result.stderr}"
+        
+        return f"Successfully changed aspect ratio of {filename} to {ratio}, saved as {unique_output}. Please refresh the file list."
+    except Exception as e:
+        print(f"[DEV] Exception in change_aspect_ratio: {str(e)}")
+        return f"Error changing aspect ratio of {filename}: {str(e)}"
+
+def rotate_media(filename: str, output_filename: str, angle: int) -> str:
+    """Rotate video or image by specified angle (90, 180, 270 degrees)."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input file {filename} not found"
+        
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        # Map angles to transpose values
+        if angle == 90:
+            filter_str = "transpose=1"
+        elif angle == 180:
+            filter_str = "transpose=1,transpose=1"
+        elif angle == 270:
+            filter_str = "transpose=2"
+        else:
+            return f"Error: Unsupported angle {angle}. Use 90, 180, or 270 degrees"
+        
+        cmd = ["ffmpeg", "-i", input_path, "-vf", filter_str, output_path, "-y"]
+        
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            return f"Error rotating: {result.stderr}"
+        
+        return f"Successfully rotated {filename} by {angle} degrees, saved as {unique_output}. Please refresh the file list."
+    except Exception as e:
+        print(f"[DEV] Exception in rotate_media: {str(e)}")
+        return f"Error rotating {filename}: {str(e)}"
+
+def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> str:
+    """Crop an image to remove black bars or borders. crop_type: 'auto', 'top-bottom', 'left-right', or 'manual'."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Input image {filename} not found"
+        
+        # Generate unique output filename
+        unique_output = generate_unique_filename("../videos", output_filename)
+        output_path = os.path.join("../videos", unique_output)
+        
+        if crop_type.lower() in ['auto', 'black', 'letterbox']:
+            # Try multiple sensitivity levels for cropdetect
+            for threshold in [24, 16, 8, 4]:
+                cmd = [
+                    "ffmpeg", "-i", input_path, 
+                    "-vf", f"cropdetect={threshold}:16:0", 
+                    "-f", "null", "-"
+                ]
+                
+                print(f"[DEV] Detecting crop area (threshold {threshold}): {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    continue
+                
+                # Extract crop parameters from output
+                crop_lines = [line for line in result.stderr.split('\n') if 'crop=' in line]
+                
+                if crop_lines:
+                    # Get the most common crop suggestion
+                    crop_line = crop_lines[-1]  # Use the last (most refined) detection
+                    crop_filter = crop_line.split('crop=')[1].split()[0]
+                    
+                    # Check if crop actually removes something significant
+                    crop_params = crop_filter.split(':')
+                    if len(crop_params) >= 4:
+                        orig_w, orig_h = crop_params[0], crop_params[1]
+                        # If crop removes less than 5% of image, try next threshold
+                        try:
+                            if int(orig_w) > 0 and int(orig_h) > 0:
+                                break
+                        except:
+                            continue
+            
+            if not crop_lines:
+                return f"No significant black bars detected in {filename}. Try 'top-bottom' or 'left-right' for manual cropping."
+            
+            # Apply the crop
+            cmd = [
+                "ffmpeg", "-i", input_path,
+                "-vf", f"crop={crop_filter}",
+                output_path, "-y"
+            ]
+            
+        elif crop_type.lower() == 'top-bottom':
+            # Crop top and bottom 10% (common letterbox removal)
+            cmd = [
+                "ffmpeg", "-i", input_path,
+                "-vf", "crop=iw:ih*0.8:0:ih*0.1",
+                output_path, "-y"
+            ]
+            
+        elif crop_type.lower() == 'left-right':
+            # Crop left and right 10% (common pillarbox removal)
+            cmd = [
+                "ffmpeg", "-i", input_path,
+                "-vf", "crop=iw*0.8:ih:iw*0.1:0",
+                output_path, "-y"
+            ]
+            
+        else:
+            return f"Error: Unsupported crop type '{crop_type}'. Use 'auto', 'top-bottom', or 'left-right'."
+        
+        print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            return f"Error cropping image: {result.stderr}"
+        
+        return f"Successfully cropped {filename} ({crop_type}), saved as {unique_output}. Please refresh the file list."
+    except Exception as e:
+        print(f"[DEV] Exception in crop_image: {str(e)}")
+        return f"Error cropping image {filename}: {str(e)}"
+
 def delete_file(filename: str) -> str:
     """Delete a video or image file."""
     try:
@@ -376,6 +578,10 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=cut_video),
     FunctionTool.from_defaults(fn=concatenate_videos),
     FunctionTool.from_defaults(fn=extract_frame),
+    FunctionTool.from_defaults(fn=resize_media),
+    FunctionTool.from_defaults(fn=change_aspect_ratio),
+    FunctionTool.from_defaults(fn=rotate_media),
+    FunctionTool.from_defaults(fn=crop_image),
     FunctionTool.from_defaults(fn=list_videos),
     FunctionTool.from_defaults(fn=list_images),
     FunctionTool.from_defaults(fn=delete_file),
