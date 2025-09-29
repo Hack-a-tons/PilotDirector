@@ -208,7 +208,10 @@ def list_videos() -> str:
         if not os.path.exists(videos_dir):
             return "Videos directory not found"
         
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
+                           '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
+                           '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
+                           '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
         videos = []
         
         for file in os.listdir(videos_dir):
@@ -561,7 +564,9 @@ def list_images() -> str:
         if not os.path.exists(videos_dir):
             return "Videos directory not found"
         
-        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
+                           '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
+                           '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
         images = []
         
         for file in os.listdir(videos_dir):

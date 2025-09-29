@@ -11,8 +11,13 @@ export async function GET() {
     const videosDir = join(process.cwd(), 'videos');
     const files = await readdir(videosDir);
     
-    const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv'];
-    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'];
+    const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
+                            '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
+                            '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
+                            '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf'];
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
+                            '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
+                            '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f'];
     
     const fileData = await Promise.all(
       files.map(async (file) => {
