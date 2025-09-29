@@ -533,6 +533,85 @@ def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> 
         print(f"[DEV] Exception in crop_image: {str(e)}")
         return f"Error cropping image {filename}: {str(e)}"
 
+def delete_files_pattern(pattern: str) -> str:
+    """Delete multiple files matching a pattern (e.g., '*.png', 'video*.mp4', 'all png files')."""
+    try:
+        import glob
+        import fnmatch
+        
+        videos_dir = "../videos"
+        if not os.path.exists(videos_dir):
+            return "Videos directory not found"
+        
+        # Supported file extensions for safety
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
+                           '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
+                           '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
+                           '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
+                           '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
+                           '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
+        all_extensions = video_extensions + image_extensions
+        
+        # Convert natural language to glob pattern
+        pattern_lower = pattern.lower()
+        if 'all' in pattern_lower and 'png' in pattern_lower:
+            glob_pattern = "*.png"
+        elif 'all' in pattern_lower and 'jpg' in pattern_lower:
+            glob_pattern = "*.jpg"
+        elif 'all' in pattern_lower and 'mp4' in pattern_lower:
+            glob_pattern = "*.mp4"
+        elif 'all' in pattern_lower and 'webm' in pattern_lower:
+            glob_pattern = "*.webm"
+        elif pattern.startswith('*.'):
+            glob_pattern = pattern
+        else:
+            glob_pattern = pattern
+        
+        # Find matching files
+        search_path = os.path.join(videos_dir, glob_pattern)
+        matching_files = glob.glob(search_path)
+        
+        if not matching_files:
+            return f"No files found matching pattern '{pattern}'"
+        
+        # Filter for safety - only delete media files
+        safe_files = []
+        for file_path in matching_files:
+            filename = os.path.basename(file_path)
+            file_ext = os.path.splitext(filename)[1].lower()
+            if file_ext in all_extensions:
+                safe_files.append(file_path)
+        
+        if not safe_files:
+            return f"No media files found matching pattern '{pattern}'"
+        
+        # Delete the files
+        deleted_files = []
+        errors = []
+        
+        for file_path in safe_files:
+            try:
+                filename = os.path.basename(file_path)
+                os.remove(file_path)
+                deleted_files.append(filename)
+                print(f"[DEV] Deleted file: {filename}")
+            except Exception as e:
+                errors.append(f"{os.path.basename(file_path)}: {str(e)}")
+        
+        result_msg = f"Successfully deleted {len(deleted_files)} files matching '{pattern}'"
+        if deleted_files:
+            result_msg += f": {', '.join(deleted_files)}"
+        if errors:
+            result_msg += f"\nErrors: {'; '.join(errors)}"
+        result_msg += ". Please refresh the file list."
+        
+        return result_msg
+        
+    except Exception as e:
+        print(f"[DEV] Exception in delete_files_pattern: {str(e)}")
+        return f"Error deleting files with pattern '{pattern}': {str(e)}"
+
 def delete_file(filename: str) -> str:
     """Delete a video or image file."""
     try:
@@ -542,8 +621,13 @@ def delete_file(filename: str) -> str:
             return f"Error: File {filename} not found"
         
         # Safety check - only allow deletion of video and image files
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
-        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff']
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
+                           '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
+                           '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
+                           '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
+                           '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
+                           '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
         
         file_ext = os.path.splitext(filename)[1].lower()
         if file_ext not in video_extensions + image_extensions:
@@ -655,6 +739,7 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=list_videos),
     FunctionTool.from_defaults(fn=list_images),
     FunctionTool.from_defaults(fn=delete_file),
+    FunctionTool.from_defaults(fn=delete_files_pattern),
 ]
 
 print(f"Backend tools loaded: {len(_backend_tools)} video processing tools")
