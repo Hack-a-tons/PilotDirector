@@ -125,8 +125,13 @@ export const FrameByFramePlayer: React.FC<FrameByFramePlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
     
+    // If already at or very close to the beginning, do nothing (like left arrow)
+    if (video.currentTime < 1 / fps) {
+      return;
+    }
+    
     video.pause();
-    video.currentTime = 0; // Frame 1 starts at time 0
+    video.currentTime = 0;
   };
 
   const goToLastFrame = () => {

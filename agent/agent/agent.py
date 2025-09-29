@@ -563,6 +563,321 @@ def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> 
         print(f"[DEV] Exception in crop_image: {str(e)}")
         return f"Error cropping image {filename}: {str(e)}"
 
+def drop_frames(filename: str, position: str, count: int = 1) -> str:
+    """Drop frames from video. Position: 'first', 'last', 'middle', or frame number (e.g. '25')."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Video file {filename} not found"
+        
+        # Get video info
+        info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration:stream=r_frame_rate,nb_frames", "-select_streams", "v:0", "-of", "csv=p=0", input_path]
+        info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+        
+        if info_result.returncode != 0:
+            return f"Error getting video info for {filename}"
+        
+        lines = info_result.stdout.strip().split('\n')
+        duration = float(lines[0]) if lines else 0
+        
+        # Get FPS
+        fps = 30.0  # Default
+        if len(lines) > 1:
+            try:
+                fps_str = lines[1]
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den)
+                else:
+                    fps = float(fps_str)
+            except:
+                fps = 30.0
+        
+        total_frames = int(duration * fps)
+        frame_duration = 1.0 / fps
+        
+        print(f"[DEV] Video: {duration:.3f}s, {fps:.2f}fps, {total_frames} frames")
+        
+        temp_path = input_path + ".temp"
+        
+        # Determine what to drop based on position
+        if position.lower() == 'first':
+            # Drop first N frames
+            start_time = count * frame_duration
+            cmd = [
+                "ffmpeg", "-i", input_path, "-ss", str(start_time),
+                "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                temp_path, "-y"
+            ]
+            action = f"first {count} frame(s)"
+            
+        elif position.lower() == 'last':
+            # Drop last N frames
+            new_duration = duration - (count * frame_duration)
+            cmd = [
+                "ffmpeg", "-i", input_path, "-t", str(new_duration),
+                "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                temp_path, "-y"
+            ]
+            action = f"last {count} frame(s)"
+            
+        elif position.lower() == 'middle':
+            # Drop N frames from middle
+            middle_frame = total_frames // 2
+            start_frame = middle_frame - (count // 2)
+            end_frame = start_frame + count
+            
+            # Create two segments and concatenate
+            segment1_end = start_frame * frame_duration
+            segment2_start = end_frame * frame_duration
+            
+            # First segment
+            seg1_path = input_path + ".seg1.mp4"
+            cmd1 = [
+                "ffmpeg", "-i", input_path, "-t", str(segment1_end),
+                "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                seg1_path, "-y"
+            ]
+            
+            # Second segment  
+            seg2_path = input_path + ".seg2.mp4"
+            cmd2 = [
+                "ffmpeg", "-i", input_path, "-ss", str(segment2_start),
+                "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                seg2_path, "-y"
+            ]
+            
+            # Execute both segments
+            result1 = subprocess.run(cmd1, capture_output=True, text=True)
+            result2 = subprocess.run(cmd2, capture_output=True, text=True)
+            
+            if result1.returncode == 0 and result2.returncode == 0:
+                # Concatenate segments
+                filelist_path = input_path + ".filelist.txt"
+                with open(filelist_path, "w") as f:
+                    f.write(f"file '{seg1_path}'\n")
+                    f.write(f"file '{seg2_path}'\n")
+                
+                cmd = [
+                    "ffmpeg", "-f", "concat", "-safe", "0", "-i", filelist_path,
+                    "-c", "copy", temp_path, "-y"
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Clean up temp files
+                for temp_file in [seg1_path, seg2_path, filelist_path]:
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                        
+                if result.returncode == 0:
+                    os.replace(temp_path, input_path)
+                    return f"Successfully dropped {count} frame(s) from middle of {filename} (frames {start_frame}-{end_frame})"
+                else:
+                    return f"Error concatenating segments: {result.stderr}"
+            else:
+                return f"Error creating segments: {result1.stderr} {result2.stderr}"
+                
+        elif position.isdigit():
+            # Drop specific frame number
+            frame_num = int(position)
+            if frame_num < 1 or frame_num > total_frames:
+                return f"Frame {frame_num} is out of range (1-{total_frames})"
+            
+            # Create segments before and after the frame
+            before_end = (frame_num - 1) * frame_duration
+            after_start = (frame_num + count - 1) * frame_duration
+            
+            if before_end <= 0:
+                # Just drop from beginning
+                cmd = [
+                    "ffmpeg", "-i", input_path, "-ss", str(after_start),
+                    "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                    temp_path, "-y"
+                ]
+                action = f"frame(s) {frame_num}-{frame_num + count - 1}"
+            elif after_start >= duration:
+                # Just drop from end
+                cmd = [
+                    "ffmpeg", "-i", input_path, "-t", str(before_end),
+                    "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                    temp_path, "-y"
+                ]
+                action = f"frame(s) {frame_num}-{frame_num + count - 1}"
+            else:
+                # Drop from middle - same logic as 'middle' but specific position
+                seg1_path = input_path + ".seg1.mp4"
+                cmd1 = [
+                    "ffmpeg", "-i", input_path, "-t", str(before_end),
+                    "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                    seg1_path, "-y"
+                ]
+                
+                seg2_path = input_path + ".seg2.mp4"
+                cmd2 = [
+                    "ffmpeg", "-i", input_path, "-ss", str(after_start),
+                    "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+                    seg2_path, "-y"
+                ]
+                
+                result1 = subprocess.run(cmd1, capture_output=True, text=True)
+                result2 = subprocess.run(cmd2, capture_output=True, text=True)
+                
+                if result1.returncode == 0 and result2.returncode == 0:
+                    filelist_path = input_path + ".filelist.txt"
+                    with open(filelist_path, "w") as f:
+                        f.write(f"file '{seg1_path}'\n")
+                        f.write(f"file '{seg2_path}'\n")
+                    
+                    cmd = [
+                        "ffmpeg", "-f", "concat", "-safe", "0", "-i", filelist_path,
+                        "-c", "copy", temp_path, "-y"
+                    ]
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    for temp_file in [seg1_path, seg2_path, filelist_path]:
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                            
+                    if result.returncode == 0:
+                        os.replace(temp_path, input_path)
+                        return f"Successfully dropped frame(s) {frame_num}-{frame_num + count - 1} from {filename}"
+                    else:
+                        return f"Error concatenating segments: {result.stderr}"
+                else:
+                    return f"Error creating segments: {result1.stderr} {result2.stderr}"
+        else:
+            return f"Invalid position '{position}'. Use 'first', 'last', 'middle', or frame number."
+        
+        # Execute simple commands (first/last)
+        if 'cmd' in locals():
+            print(f"[DEV] Dropping {action} from {filename}: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                os.replace(temp_path, input_path)
+                return f"Successfully dropped {action} from {filename}"
+            else:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                return f"Error dropping {action} from {filename}: {result.stderr}"
+            
+    except Exception as e:
+        return f"Error dropping frames from {filename}: {str(e)}"
+
+def drop_first_frame(filename: str) -> str:
+    """Drop the first frame from a video and save under the same name."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Video file {filename} not found"
+        
+        # Get FPS to calculate one frame duration
+        fps_cmd = ["ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", input_path]
+        fps_result = subprocess.run(fps_cmd, capture_output=True, text=True)
+        
+        fps = 30.0  # Default
+        if fps_result.returncode == 0 and fps_result.stdout.strip():
+            try:
+                fps_str = fps_result.stdout.strip()
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den)
+                else:
+                    fps = float(fps_str)
+            except:
+                fps = 30.0
+        
+        one_frame_duration = 1.0 / fps
+        temp_path = input_path + ".temp"
+        
+        cmd = [
+            "ffmpeg", "-i", input_path, "-ss", str(one_frame_duration),
+            "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+            temp_path, "-y"
+        ]
+        
+        print(f"[DEV] Dropping first frame from {filename}: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            # Replace original with modified version
+            os.replace(temp_path, input_path)
+            return f"Successfully dropped first frame from {filename}"
+        else:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return f"Error dropping first frame from {filename}: {result.stderr}"
+            
+    except Exception as e:
+        return f"Error dropping first frame from {filename}: {str(e)}"
+
+def drop_last_frame(filename: str) -> str:
+    """Drop the last frame from a video and save under the same name."""
+    try:
+        input_path = os.path.join("../videos", filename)
+        
+        if not os.path.exists(input_path):
+            return f"Error: Video file {filename} not found"
+        
+        # Get video duration and FPS
+        duration_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
+        fps_cmd = ["ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", input_path]
+        
+        duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
+        fps_result = subprocess.run(fps_cmd, capture_output=True, text=True)
+        
+        if duration_result.returncode != 0:
+            return f"Error getting video duration for {filename}"
+        
+        duration = float(duration_result.stdout.strip())
+        
+        fps = 30.0  # Default
+        if fps_result.returncode == 0 and fps_result.stdout.strip():
+            try:
+                fps_str = fps_result.stdout.strip()
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den)
+                else:
+                    fps = float(fps_str)
+            except Exception as e:
+                print(f"[DEV] Could not parse FPS '{fps_str}': {e}, using default 30")
+                fps = 30.0
+        
+        one_frame_duration = 1.0 / fps
+        new_duration = duration - one_frame_duration
+        temp_path = input_path + ".temp.mp4"  # Ensure proper extension
+        
+        print(f"[DEV] Dropping last frame: duration={duration:.3f}s, fps={fps:.2f}, new_duration={new_duration:.3f}s")
+        print(f"[DEV] Input: {input_path}")
+        print(f"[DEV] Temp: {temp_path}")
+        
+        cmd = [
+            "ffmpeg", "-i", input_path, "-t", str(new_duration),
+            "-c:v", "libx264", "-crf", "18", "-c:a", "aac", "-b:a", "128k",
+            temp_path, "-y"
+        ]
+        
+        print(f"[DEV] Dropping last frame from {filename}: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            # Replace original with modified version
+            os.replace(temp_path, input_path)
+            return f"Successfully dropped last frame from {filename}"
+        else:
+            print(f"[DEV] FFmpeg error: {result.stderr}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return f"Error dropping last frame from {filename}: {result.stderr}"
+            
+    except Exception as e:
+        return f"Error dropping last frame from {filename}: {str(e)}"
+
 def trim_empty_frames(filename: str, output_filename: str = None) -> str:
     """Detect and remove empty/black frames from the beginning and end of a video."""
     try:
@@ -753,6 +1068,8 @@ def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
                 "-c:v", "libx264", "-crf", "18",  # High quality video
                 "-c:a", "aac", "-b:a", "128k",   # Good quality audio
                 "-avoid_negative_ts", "make_zero",  # Fix timestamp issues
+                "-fflags", "+genpts",  # Generate proper timestamps
+                "-movflags", "+faststart",  # Optimize for web playback
                 output_path, "-y"
             ])
             
@@ -1083,6 +1400,9 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=rotate_media),
     FunctionTool.from_defaults(fn=recode_video),
     FunctionTool.from_defaults(fn=crop_image),
+    FunctionTool.from_defaults(fn=drop_frames),
+    FunctionTool.from_defaults(fn=drop_first_frame),
+    FunctionTool.from_defaults(fn=drop_last_frame),
     FunctionTool.from_defaults(fn=trim_empty_frames),
     FunctionTool.from_defaults(fn=split_by_scenes),
     FunctionTool.from_defaults(fn=list_videos),
