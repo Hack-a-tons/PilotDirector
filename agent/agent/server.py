@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -27,10 +27,19 @@ def _load_env_files() -> None:
 
 _load_env_files()
 
-from .agent import agentic_chat_router
+from .agent import agentic_chat_router, current_user_id
 from .sheets_integration import get_sheet_data, convert_sheet_to_canvas_items, sync_canvas_to_sheet, get_sheet_names, create_new_sheet
 
 app = FastAPI()
+
+# Middleware to extract user_id from headers
+@app.middleware("http")
+async def set_user_context(request: Request, call_next):
+    user_id = request.headers.get('x-user-id', 'default')
+    current_user_id.set(user_id)
+    response = await call_next(request)
+    return response
+
 app.include_router(agentic_chat_router)
 
 # Request models

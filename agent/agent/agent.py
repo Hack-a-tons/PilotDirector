@@ -3,6 +3,7 @@ import os
 import subprocess
 import json
 from dotenv import load_dotenv
+from contextvars import ContextVar
 
 from llama_index.llms.azure_openai import AzureOpenAI
 from llama_index.llms.openai import OpenAI
@@ -12,12 +13,15 @@ from llama_index.protocols.ag_ui.router import get_ag_ui_workflow_router
 # Load environment variables early to support local development via .env
 load_dotenv()
 
+# Context variable to store current user_id
+current_user_id: ContextVar[Optional[str]] = ContextVar('current_user_id', default=None)
+
 # Video processing tools
-def get_video_info(filename: str) -> str:
+def get_video_info(filename: str, user_id: str = None) -> str:
     """Get information about a video file using ffprobe."""
     try:
-        video_path = os.path.join("../videos", filename)
-        if not os.path.exists(video_path):
+        video_path = find_user_file(filename, user_id)
+        if not video_path:
             return f"Error: Video file {filename} not found"
         
         cmd = [
@@ -65,17 +69,23 @@ def generate_unique_filename(base_path: str, filename: str) -> str:
             return new_filename
         counter += 1
 
-def cut_video(filename: str, start_time: str, duration: str, output_filename: str) -> str:
+def cut_video(filename: str, start_time: str, duration: str, output_filename: str, user_id: str = None) -> str:
     """Cut a video segment using ffmpeg."""
     try:
-        input_path = os.path.join("../videos", filename)
+        print(f"[DEBUG] cut_video called with user_id: {user_id}, filename: {filename}")
         
-        if not os.path.exists(input_path):
+        input_path = find_user_file(filename, user_id)
+        if not input_path:
             return f"Error: Input video {filename} not found"
         
-        # Generate unique output filename
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        # Use the directory of the input file as output directory
+        output_dir = os.path.dirname(input_path)
+        print(f"[DEBUG] cut_video output_dir: {output_dir}")
+        
+        # Generate unique output filename in the same directory as input file
+        unique_output = generate_unique_filename(output_dir, output_filename)
+        output_path = os.path.join(output_dir, unique_output)
+        print(f"[DEBUG] cut_video output_path: {output_path}")
         
         # Get video duration first to validate
         info_cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", input_path]
@@ -117,32 +127,51 @@ def cut_video(filename: str, start_time: str, duration: str, output_filename: st
         print(f"[DEV] Exception in cut_video: {str(e)}")
         return f"Error cutting video {filename}: {str(e)}"
 
-def concatenate_videos(filenames: List[str], output_filename: str, preserve_order: bool = False) -> str:
+def concatenate_videos(filenames: List[str], output_filename: str, preserve_order: bool = False, user_id: str = None) -> str:
     """Concatenate multiple videos using ffmpeg."""
     try:
+        print(f"[DEBUG] concatenate_videos called with user_id: {user_id}")
+        print(f"[DEBUG] filenames: {filenames}")
+        print(f"[DEBUG] output_filename: {output_filename}")
+        
         # Only sort alphabetically if order is not explicitly specified by user
         if preserve_order:
             sorted_filenames = filenames  # Keep user-specified order
         else:
             sorted_filenames = sorted(filenames)  # Sort alphabetically for "all videos"
         
-        # Create a temporary file list
-        file_list_path = "../videos/temp_filelist.txt"
+        # Find the first input file to determine the user directory
+        first_file_path = find_user_file(sorted_filenames[0], user_id)
+        if not first_file_path:
+            return f"Error: Video file {sorted_filenames[0]} not found"
+        
+        # Use the directory of the first input file as output directory
+        output_dir = os.path.dirname(first_file_path)
+        print(f"[DEBUG] output_dir from first file: {output_dir}")
+        
+        file_list_path = os.path.join(output_dir, "temp_filelist.txt")
+        
         with open(file_list_path, "w") as f:
             for filename in sorted_filenames:
-                video_path = os.path.join("../videos", filename)
-                if os.path.exists(video_path):
-                    f.write(f"file '{filename}'\n")
+                file_path = find_user_file(filename, user_id)
+                if file_path:
+                    # Use relative path for ffmpeg
+                    rel_path = os.path.relpath(file_path, output_dir)
+                    f.write(f"file '{rel_path}'\n")
         
-        # Generate unique output filename
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        # Generate unique output filename in the same directory as input files
+        unique_output = generate_unique_filename(output_dir, output_filename)
+        output_path = os.path.join(output_dir, unique_output)
+        print(f"[DEBUG] output_path: {output_path}")
         
         cmd = [
             "ffmpeg", "-f", "concat", "-safe", "0", 
             "-i", file_list_path, "-c", "copy", output_path, "-y"
         ]
         
+        print(f"[DEBUG] FFmpeg command: {' '.join(cmd)}")
+        print(f"[DEBUG] Working directory: {os.getcwd()}")
+        print(f"[DEBUG] Output directory: {output_dir}")
         print(f"[DEV] Executing FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
@@ -158,17 +187,59 @@ def concatenate_videos(filenames: List[str], output_filename: str, preserve_orde
     except Exception as e:
         return f"Error: {str(e)}"
 
-def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
+def get_user_videos_dir(user_id: str = None) -> str:
+    """Get user-specific videos directory."""
+    if user_id:
+        return os.path.join("../videos", user_id)
+    return "../videos"
+
+def find_user_file(filename: str, user_id: str = None) -> str:
+    """Find a file in user directories and return the full path."""
+    videos_dir = "../videos"
+    
+    # First check if it's already a full path
+    if os.path.exists(filename):
+        return filename
+    
+    # If user_id provided, check user directory first
+    if user_id:
+        user_dir = get_user_videos_dir(user_id)
+        user_file_path = os.path.join(user_dir, filename)
+        if os.path.exists(user_file_path):
+            return user_file_path
+    
+    # Check all user directories
+    try:
+        all_items = os.listdir(videos_dir)
+        for item in all_items:
+            item_path = os.path.join(videos_dir, item)
+            if os.path.isdir(item_path):
+                file_path = os.path.join(item_path, filename)
+                if os.path.exists(file_path):
+                    return file_path
+    except Exception as e:
+        print(f"[DEV] Error searching for file {filename}: {e}")
+    
+    # Fallback to root directory
+    root_path = os.path.join(videos_dir, filename)
+    if os.path.exists(root_path):
+        return root_path
+    
+    return None
+
+def extract_frame(filename: str, timestamp: str, output_filename: str, user_id: str = None) -> str:
     """Extract a frame from a video at a specific timestamp."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input video {filename} not found"
         
-        # Generate unique output filename
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        # Generate unique output filename in user directory
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         # Handle "last" frame request
         if timestamp.lower() in ['last', 'end', 'final']:
@@ -206,11 +277,66 @@ def extract_frame(filename: str, timestamp: str, output_filename: str) -> str:
         print(f"[DEV] Exception in extract_frame: {str(e)}")
         return f"Error extracting frame from {filename}: {str(e)}"
 
-def list_videos() -> str:
-    """List all video files in the videos directory with basic info."""
+def get_video_info_helper(file_path: str, filename: str) -> dict:
+    """Helper function to get video info using ffprobe."""
     try:
+        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            format_info = data.get("format", {})
+            video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
+            
+            duration = float(format_info.get("duration", 0))
+            size = int(format_info.get("size", 0))
+            width = video_stream.get("width", 0)
+            height = video_stream.get("height", 0)
+            
+            # Get FPS and calculate frame count
+            fps = 30.0  # Default
+            if video_stream.get("r_frame_rate"):
+                try:
+                    fps_str = video_stream["r_frame_rate"]
+                    if "/" in fps_str:
+                        num, den = fps_str.split("/")
+                        fps = float(num) / float(den)
+                    else:
+                        fps = float(fps_str)
+                except:
+                    fps = 30.0
+            
+            frame_count = int(duration * fps)
+            
+            return {
+                "filename": filename,
+                "duration": duration,
+                "size": size,
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "frame_count": frame_count
+            }
+    except Exception as e:
+        print(f"[DEV] Error getting info for {filename}: {e}")
+    
+    return {
+        "filename": filename,
+        "duration": 0,
+        "size": 0,
+        "width": 0,
+        "height": 0,
+        "fps": 30.0,
+        "frame_count": 0
+    }
+
+def list_videos(user_id: str = None) -> str:
+    """List all video files in user directories with basic info."""
+    try:
+        print(f"[DEBUG] list_videos() called with user_id: {user_id}")
         print(f"[DEV] list_videos() called - starting execution")
         videos_dir = "../videos"
+        print(f"[DEBUG] Reading from videos_dir: {videos_dir}")
         if not os.path.exists(videos_dir):
             print(f"[DEV] Videos directory not found: {videos_dir}")
             return "Videos directory not found"
@@ -219,94 +345,121 @@ def list_videos() -> str:
                            '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
                            '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
                            '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
+                           '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
+                           '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
+        
         videos = []
+        images = []
         
-        all_files = os.listdir(videos_dir)
-        print(f"[DEV] Found {len(all_files)} total files in directory")
-        
-        for file in all_files:
-            if any(file.lower().endswith(ext) for ext in video_extensions):
-                print(f"[DEV] Processing video file: {file}")
-                file_path = os.path.join(videos_dir, file)
-                
-                # Get basic info for each video
+        # If user_id provided, check user directory first
+        if user_id:
+            user_dir = get_user_videos_dir(user_id)
+            print(f"[DEBUG] Checking user directory first: {user_dir}")
+            if os.path.exists(user_dir):
+                print(f"[DEV] Checking user directory: {user_id}")
                 try:
-                    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", file_path]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
-                    
-                    if result.returncode == 0:
-                        data = json.loads(result.stdout)
-                        format_info = data.get("format", {})
-                        video_stream = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
-                        
-                        duration = float(format_info.get("duration", 0))
-                        size = int(format_info.get("size", 0))
-                        width = video_stream.get("width", 0)
-                        height = video_stream.get("height", 0)
-                        
-                        # Get FPS and calculate frame count
-                        fps = 30.0  # Default
-                        if video_stream.get("r_frame_rate"):
+                    user_files = os.listdir(user_dir)
+                    print(f"[DEBUG] Files in user directory: {user_files}")
+                    for file in user_files:
+                        file_path = os.path.join(user_dir, file)
+                        if any(file.lower().endswith(ext) for ext in video_extensions):
+                            print(f"[DEV] Processing user video file: {file}")
+                            video_info = get_video_info_helper(file_path, file)
+                            videos.append(video_info)
+                        elif any(file.lower().endswith(ext) for ext in image_extensions):
+                            images.append({"filename": file, "type": "image"})
+                except Exception as e:
+                    print(f"[DEV] Error reading user directory {user_dir}: {e}")
+            else:
+                print(f"[DEBUG] User directory does not exist: {user_dir}")
+        else:
+            print(f"[DEBUG] No user_id provided, will check all directories")
+        
+        # Also check all directories for backward compatibility
+        all_items = os.listdir(videos_dir)
+        print(f"[DEV] Found {len(all_items)} total items in directory: {all_items}")
+        
+        # Check all user directories (not just browser ones)
+        for item in all_items:
+            item_path = os.path.join(videos_dir, item)
+            if os.path.isdir(item_path):  # Any directory is a potential user directory
+                print(f"[DEV] Checking user directory: {item}")
+                try:
+                    user_files = os.listdir(item_path)
+                    for file in user_files:
+                        file_path = os.path.join(item_path, file)
+                        if any(file.lower().endswith(ext) for ext in video_extensions):
+                            print(f"[DEV] Processing user video file: {file} from {item}")
+                            video_info = get_video_info_helper(file_path, file)
+                            video_info['user_dir'] = item  # Add user directory info
+                            videos.append(video_info)
+                        elif any(file.lower().endswith(ext) for ext in image_extensions):
+                            print(f"[DEV] Processing user image file: {file} from {item}")
+                            # Get basic image info
                             try:
-                                fps_str = video_stream["r_frame_rate"]
-                                if '/' in fps_str:
-                                    num, den = fps_str.split('/')
-                                    fps = float(num) / float(den)
-                                else:
-                                    fps = float(fps_str)
-                                fps = round(fps, 2)
-                            except:
-                                fps = 30.0
-                        
-                        frame_count = int(duration * fps) if duration > 0 else 0
-                        
-                        # Get modification time
-                        stat = os.stat(file_path)
-                        from datetime import datetime
-                        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        videos.append({
-                            'name': file,
-                            'duration': duration,
-                            'size': size,
-                            'width': width,
-                            'height': height,
-                            'fps': fps,
-                            'frame_count': frame_count,
-                            'modified': mod_time
-                        })
-                    else:
-                        videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'fps': 0, 'frame_count': 0, 'modified': 'unknown'})
-                except:
-                    videos.append({'name': file, 'duration': 0, 'size': 0, 'width': 0, 'height': 0, 'fps': 0, 'frame_count': 0, 'modified': 'unknown'})
+                                stat = os.stat(file_path)
+                                size = stat.st_size
+                                images.append({
+                                    'filename': file,
+                                    'size': size,
+                                    'type': 'image',
+                                    'user_dir': item  # Add user directory info
+                                })
+                            except Exception as e:
+                                print(f"[DEV] Error getting image info for {file}: {e}")
+                except Exception as e:
+                    print(f"[DEV] Error reading user directory {item}: {e}")
+                    continue
         
-        if not videos:
-            return "No video files found"
+        # Format output
+        result = ""
         
-        # Sort by modification time (most recent first)
-        videos.sort(key=lambda x: x['modified'], reverse=True)
+        if videos:
+            result += "You have the following video files:\n\n"
+            for video in videos:
+                duration_str = f"{video['duration']:.1f}s"
+                frame_info = f"({video['frame_count']} frames @{video['fps']:.1f}fps)" if video['frame_count'] > 0 else ""
+                size_mb = video['size'] / (1024 * 1024)
+                size_str = f"{size_mb:.1f}MB"
+                resolution = f"{video['width']}x{video['height']}" if video['width'] > 0 else "unknown"
+                
+                result += f"{video['filename']}: {duration_str} {frame_info}, {size_str}, {resolution}\n"
         
-        result = "Available videos:\n"
-        for video in videos:
-            size_mb = video['size'] / 1024 / 1024 if video['size'] > 0 else 0
-            resolution = f"{video['width']}x{video['height']}" if video['width'] > 0 else "unknown"
-            fps_info = f" ({video['frame_count']}f @{video['fps']}fps)" if video['fps'] > 0 else ""
-            result += f"- {video['name']}: {video['duration']:.1f}s{fps_info}, {size_mb:.1f}MB, {resolution}, modified: {video['modified']}\n"
+        if images:
+            if result:
+                result += "\n"
+            result += "You have the following image files:\n\n"
+            for image in images:
+                size_mb = image['size'] / (1024 * 1024)
+                size_str = f"{size_mb:.1f}MB"
+                result += f"{image['filename']}: {size_str}\n"
         
-        return result.strip()
+        if not videos and not images:
+            result = "No video or image files found in your directory."
+        else:
+            result += "\nLet me know if you want to perform any actions on these files."
+        
+        print(f"[DEV] Returning info for {len(videos)} videos and {len(images)} images")
+        return result
+        
     except Exception as e:
-        return f"Error listing videos: {str(e)}"
+        error_msg = f"Error listing files: {str(e)}"
+        print(f"[DEV] {error_msg}")
+        return error_msg
 
-def resize_media(filename: str, output_filename: str, width: int = 0, height: int = 0, scale: str = "") -> str:
+def resize_media(filename: str, output_filename: str, width: int = 0, height: int = 0, scale: str = "", user_id: str = None) -> str:
     """Resize video or image. Use width/height for exact size, or scale for proportional (e.g. '0.5' for 50%)."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         if scale:
             # Proportional scaling
@@ -337,16 +490,18 @@ def resize_media(filename: str, output_filename: str, width: int = 0, height: in
         print(f"[DEV] Exception in resize_media: {str(e)}")
         return f"Error resizing {filename}: {str(e)}"
 
-def change_aspect_ratio(filename: str, output_filename: str, ratio: str, method: str = "pad") -> str:
+def change_aspect_ratio(filename: str, output_filename: str, ratio: str, method: str = "pad", user_id: str = None) -> str:
     """Change aspect ratio of video/image. Ratio like '16:9', '4:3', '1:1'. Method: 'pad' (add bars) or 'crop'."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         # Parse aspect ratio
         try:
@@ -377,16 +532,18 @@ def change_aspect_ratio(filename: str, output_filename: str, ratio: str, method:
         print(f"[DEV] Exception in change_aspect_ratio: {str(e)}")
         return f"Error changing aspect ratio of {filename}: {str(e)}"
 
-def rotate_media(filename: str, output_filename: str, angle: int) -> str:
+def rotate_media(filename: str, output_filename: str, angle: int, user_id: str = None) -> str:
     """Rotate video or image by specified angle (90, 180, 270 degrees)."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         # Map angles to transpose values
         if angle == 90:
@@ -412,12 +569,12 @@ def rotate_media(filename: str, output_filename: str, angle: int) -> str:
         print(f"[DEV] Exception in rotate_media: {str(e)}")
         return f"Error rotating {filename}: {str(e)}"
 
-def recode_video(filename: str, output_filename: str, format: str = "mp4", quality: str = "medium") -> str:
+def recode_video(filename: str, output_filename: str, format: str = "mp4", quality: str = "medium", user_id: str = None) -> str:
     """Recode video to different format/quality. Format: mp4, webm, avi. Quality: high, medium, low, 720p, 1080p."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
         # Auto-generate output filename if not provided with extension
@@ -425,8 +582,10 @@ def recode_video(filename: str, output_filename: str, format: str = "mp4", quali
             base_name = os.path.splitext(output_filename)[0]
             output_filename = f"{base_name}.{format}"
         
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         # Build FFmpeg command based on quality/resolution
         cmd = ["ffmpeg", "-i", input_path]
@@ -476,17 +635,19 @@ def recode_video(filename: str, output_filename: str, format: str = "mp4", quali
         print(f"[DEV] Exception in recode_video: {str(e)}")
         return f"Error recoding {filename}: {str(e)}"
 
-def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> str:
+def crop_image(filename: str, output_filename: str, crop_type: str = "auto", user_id: str = None) -> str:
     """Crop an image to remove black bars or borders. crop_type: 'auto', 'top-bottom', 'left-right', or 'manual'."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input image {filename} not found"
         
         # Generate unique output filename
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         if crop_type.lower() in ['auto', 'black', 'letterbox']:
             # Try multiple sensitivity levels for cropdetect
@@ -563,12 +724,12 @@ def crop_image(filename: str, output_filename: str, crop_type: str = "auto") -> 
         print(f"[DEV] Exception in crop_image: {str(e)}")
         return f"Error cropping image {filename}: {str(e)}"
 
-def drop_frames(filename: str, position: str, count: int = 1) -> str:
+def drop_frames(filename: str, position: str, count: int = 1, user_id: str = None) -> str:
     """Drop frames from video. Position: 'first', 'last', 'middle', or frame number (e.g. '25')."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Video file {filename} not found"
         
         # Get video info
@@ -767,12 +928,12 @@ def drop_frames(filename: str, position: str, count: int = 1) -> str:
     except Exception as e:
         return f"Error dropping frames from {filename}: {str(e)}"
 
-def drop_first_frame(filename: str) -> str:
+def drop_first_frame(filename: str, user_id: str = None) -> str:
     """Drop the first frame from a video and save under the same name."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Video file {filename} not found"
         
         # Get FPS to calculate one frame duration
@@ -815,12 +976,12 @@ def drop_first_frame(filename: str) -> str:
     except Exception as e:
         return f"Error dropping first frame from {filename}: {str(e)}"
 
-def drop_last_frame(filename: str) -> str:
+def drop_last_frame(filename: str, user_id: str = None) -> str:
     """Drop the last frame from a video and save under the same name."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Video file {filename} not found"
         
         # Get video duration and FPS
@@ -878,20 +1039,22 @@ def drop_last_frame(filename: str) -> str:
     except Exception as e:
         return f"Error dropping last frame from {filename}: {str(e)}"
 
-def trim_empty_frames(filename: str, output_filename: str = None) -> str:
+def trim_empty_frames(filename: str, output_filename: str = None, user_id: str = None) -> str:
     """Detect and remove empty/black frames from the beginning and end of a video."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
         if not output_filename:
             base_name = os.path.splitext(filename)[0]
             output_filename = f"{base_name}_trimmed.mp4"
         
-        unique_output = generate_unique_filename("../videos", output_filename)
-        output_path = os.path.join("../videos", unique_output)
+        user_videos_dir = get_user_videos_dir(user_id)
+        os.makedirs(user_videos_dir, exist_ok=True)
+        unique_output = generate_unique_filename(user_videos_dir, output_filename)
+        output_path = os.path.join(user_videos_dir, unique_output)
         
         print(f"[DEV] Detecting empty frames in {filename}")
         
@@ -982,12 +1145,13 @@ def trim_empty_frames(filename: str, output_filename: str = None) -> str:
 def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
     """Split video into scenes based on scene change detection. Sensitivity: 0.1 (very sensitive) to 1.0 (less sensitive)."""
     try:
-        input_path = os.path.join("../videos", filename)
+        input_path = find_user_file(filename)
         
-        if not os.path.exists(input_path):
+        if not input_path:
             return f"Error: Input file {filename} not found"
         
         base_name = os.path.splitext(filename)[0]
+        user_dir = os.path.dirname(input_path)
         
         # Step 1: Detect scene changes and get timestamps
         print(f"[DEV] Detecting scenes in {filename} with sensitivity {sensitivity}")
@@ -1054,8 +1218,8 @@ def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
                 scene_filename = f"{base_name}_scene_{i+1:02d}.mp4"
                 duration = None
             
-            unique_output = generate_unique_filename("../videos", scene_filename)
-            output_path = os.path.join("../videos", unique_output)
+            unique_output = generate_unique_filename(user_dir, scene_filename)
+            output_path = os.path.join(user_dir, unique_output)
             
             # Build FFmpeg command for this scene with re-encoding for precision
             cmd = ["ffmpeg", "-i", input_path, "-ss", str(start_time)]
@@ -1080,8 +1244,10 @@ def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
                 # Auto-trim empty frames from the scene
                 print(f"[DEV] Auto-trimming empty frames from scene {i+1}")
                 trimmed_filename = f"{base_name}_scene_{i+1:02d}_clean.mp4"
-                trimmed_output = generate_unique_filename("../videos", trimmed_filename)
-                trimmed_path = os.path.join("../videos", trimmed_output)
+                user_videos_dir = get_user_videos_dir(user_id)
+                os.makedirs(user_videos_dir, exist_ok=True)
+                trimmed_output = generate_unique_filename(user_videos_dir, trimmed_filename)
+                trimmed_path = os.path.join(user_videos_dir, trimmed_output)
                 
                 # More aggressive detection for gray/empty frames
                 # Use multiple detection methods
@@ -1197,7 +1363,7 @@ def split_by_scenes(filename: str, sensitivity: float = 0.3) -> str:
         print(f"[DEV] Exception in split_by_scenes: {str(e)}")
         return f"Error splitting {filename} by scenes: {str(e)}"
 
-def delete_files_pattern(pattern: str) -> str:
+def delete_files_pattern(pattern: str, user_id: str = None) -> str:
     """Delete multiple files matching a pattern (e.g., '*.png', 'video*.mp4', 'all png files')."""
     try:
         import glob
@@ -1206,6 +1372,26 @@ def delete_files_pattern(pattern: str) -> str:
         videos_dir = "../videos"
         if not os.path.exists(videos_dir):
             return "Videos directory not found"
+        
+        # If user_id provided, search in user directory first
+        search_dirs = []
+        if user_id:
+            user_dir = get_user_videos_dir(user_id)
+            if os.path.exists(user_dir):
+                search_dirs.append(user_dir)
+        
+        # Also search all directories for backward compatibility
+        try:
+            all_items = os.listdir(videos_dir)
+            for item in all_items:
+                item_path = os.path.join(videos_dir, item)
+                if os.path.isdir(item_path):
+                    search_dirs.append(item_path)
+                elif os.path.isfile(item_path):
+                    search_dirs.append(videos_dir)
+                    break
+        except Exception as e:
+            print(f"[DEV] Error listing videos directory: {e}")
         
         # Supported file extensions for safety
         video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
@@ -1219,6 +1405,32 @@ def delete_files_pattern(pattern: str) -> str:
         
         # Convert natural language to glob pattern
         pattern_lower = pattern.lower()
+        
+        files_to_delete = []
+        
+        # Search in all user directories
+        all_items = os.listdir(videos_dir)
+        for item in all_items:
+            item_path = os.path.join(videos_dir, item)
+            if os.path.isdir(item_path):  # Any directory is a potential user directory
+                try:
+                    user_files = os.listdir(item_path)
+                    for file in user_files:
+                        file_path = os.path.join(item_path, file)
+                        file_ext = os.path.splitext(file)[1].lower()
+                        
+                        # Only consider media files
+                        if file_ext in all_extensions:
+                            # Check if file matches pattern
+                            if (pattern_lower in ['all images', 'all image files', 'images'] and file_ext in image_extensions) or \
+                               (pattern_lower in ['all videos', 'all video files', 'videos'] and file_ext in video_extensions) or \
+                               (pattern_lower in ['all files', 'all', '*'] and file_ext in all_extensions) or \
+                               fnmatch.fnmatch(file.lower(), pattern_lower) or \
+                               fnmatch.fnmatch(file, pattern):
+                                files_to_delete.append(file_path)
+                except Exception as e:
+                    print(f"[DEV] Error reading user directory {item}: {e}")
+                    continue
         if 'all' in pattern_lower and 'png' in pattern_lower:
             glob_pattern = "*.png"
         elif 'all' in pattern_lower and 'jpg' in pattern_lower:
@@ -1276,12 +1488,12 @@ def delete_files_pattern(pattern: str) -> str:
         print(f"[DEV] Exception in delete_files_pattern: {str(e)}")
         return f"Error deleting files with pattern '{pattern}': {str(e)}"
 
-def delete_file(filename: str) -> str:
+def delete_file(filename: str, user_id: str = None) -> str:
     """Delete a video or image file."""
     try:
-        file_path = os.path.join("../videos", filename)
+        file_path = find_user_file(filename, user_id)
         
-        if not os.path.exists(file_path):
+        if not file_path:
             return f"Error: File {filename} not found"
         
         # Safety check - only allow deletion of video and image files
@@ -1305,8 +1517,8 @@ def delete_file(filename: str) -> str:
         print(f"[DEV] Exception in delete_file: {str(e)}")
         return f"Error deleting {filename}: {str(e)}"
 
-def list_images() -> str:
-    """List all image files in the videos directory."""
+def list_images(user_id: str = None) -> str:
+    """List all image files in user directories."""
     try:
         videos_dir = "../videos"
         if not os.path.exists(videos_dir):
@@ -1317,59 +1529,40 @@ def list_images() -> str:
                            '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
         images = []
         
-        for file in os.listdir(videos_dir):
-            if any(file.lower().endswith(ext) for ext in image_extensions):
-                file_path = os.path.join(videos_dir, file)
-                
+        # Search in all user directories
+        all_items = os.listdir(videos_dir)
+        for item in all_items:
+            item_path = os.path.join(videos_dir, item)
+            if os.path.isdir(item_path):  # Any directory is a potential user directory
                 try:
-                    # Get image info using ffprobe
-                    cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", file_path]
-                    result = subprocess.run(cmd, capture_output=True, text=True)
-                    
-                    if result.returncode == 0:
-                        data = json.loads(result.stdout)
-                        stream = data.get("streams", [{}])[0]
-                        width = stream.get("width", 0)
-                        height = stream.get("height", 0)
-                        
-                        # Get file size and modification time
-                        stat = os.stat(file_path)
-                        size = stat.st_size
-                        from datetime import datetime
-                        mod_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        images.append({
-                            'name': file,
-                            'width': width,
-                            'height': height,
-                            'size': size,
-                            'modified': mod_time
-                        })
-                    else:
-                        stat = os.stat(file_path)
-                        images.append({
-                            'name': file,
-                            'width': 0,
-                            'height': 0,
-                            'size': stat.st_size,
-                            'modified': 'unknown'
-                        })
-                except:
-                    images.append({'name': file, 'width': 0, 'height': 0, 'size': 0, 'modified': 'unknown'})
+                    user_files = os.listdir(item_path)
+                    for file in user_files:
+                        if any(file.lower().endswith(ext) for ext in image_extensions):
+                            file_path = os.path.join(item_path, file)
+                            try:
+                                stat = os.stat(file_path)
+                                size = stat.st_size
+                                images.append({
+                                    'name': file,
+                                    'size': size,
+                                    'path': file_path
+                                })
+                            except Exception as e:
+                                print(f"[DEV] Error getting info for {file}: {e}")
+                except Exception as e:
+                    print(f"[DEV] Error reading user directory {item}: {e}")
+                    continue
         
         if not images:
-            return "No image files found"
+            return "There are no image files currently available."
         
-        # Sort by modification time (most recent first)
-        images.sort(key=lambda x: x['modified'], reverse=True)
-        
-        result = "Available images:\n"
+        result = "Available image files:\n\n"
         for image in images:
-            size_kb = image['size'] / 1024 if image['size'] > 0 else 0
-            resolution = f"{image['width']}x{image['height']}" if image['width'] > 0 else "unknown"
-            result += f"- {image['name']}: {resolution}, {size_kb:.1f}KB, modified: {image['modified']}\n"
+            size_mb = image['size'] / (1024 * 1024)
+            result += f"{image['name']}: {size_mb:.1f}MB\n"
         
         return result.strip()
+        
     except Exception as e:
         return f"Error listing images: {str(e)}"
 
@@ -1389,29 +1582,51 @@ def setGlobalTitle(title: Annotated[str, "Global title"]) -> str:
 def setGlobalDescription(description: Annotated[str, "Global description"]) -> str:
     return f"setGlobalDescription({description})"
 
-# Create backend tools
+# Wrapper functions that automatically use current user context
+def get_video_info_wrapper(filename: str) -> str:
+    return get_video_info(filename, current_user_id.get())
+
+def cut_video_wrapper(filename: str, start_time: str, duration: str, output_filename: str) -> str:
+    user_id = current_user_id.get()
+    print(f"[DEBUG] cut_video_wrapper called with user_id: {user_id}")
+    result = cut_video(filename, start_time, duration, output_filename, user_id)
+    print(f"[DEBUG] cut_video result: {result}")
+    return result
+
+def concatenate_videos_wrapper(filenames: List[str], output_filename: str, preserve_order: bool = False) -> str:
+    user_id = current_user_id.get()
+    print(f"[DEBUG] concatenate_videos_wrapper called with user_id: {user_id}")
+    result = concatenate_videos(filenames, output_filename, preserve_order, user_id)
+    print(f"[DEBUG] concatenate_videos result: {result}")
+    return result
+
+def extract_frame_wrapper(filename: str, timestamp: str, output_filename: str) -> str:
+    return extract_frame(filename, timestamp, output_filename, current_user_id.get())
+
+def list_videos_wrapper() -> str:
+    user_id = current_user_id.get()
+    print(f"[DEBUG] list_videos_wrapper called with user_id: {user_id}")
+    result = list_videos(user_id)
+    print(f"[DEBUG] list_videos result: {result}")
+    return result
+
+def delete_file_wrapper(filename: str) -> str:
+    return delete_file(filename, current_user_id.get())
+
+# Create backend tools with wrapper functions
 _backend_tools = [
-    FunctionTool.from_defaults(fn=get_video_info),
-    FunctionTool.from_defaults(fn=cut_video),
-    FunctionTool.from_defaults(fn=concatenate_videos),
-    FunctionTool.from_defaults(fn=extract_frame),
-    FunctionTool.from_defaults(fn=resize_media),
-    FunctionTool.from_defaults(fn=change_aspect_ratio),
-    FunctionTool.from_defaults(fn=rotate_media),
-    FunctionTool.from_defaults(fn=recode_video),
-    FunctionTool.from_defaults(fn=crop_image),
-    FunctionTool.from_defaults(fn=drop_frames),
-    FunctionTool.from_defaults(fn=drop_first_frame),
-    FunctionTool.from_defaults(fn=drop_last_frame),
-    FunctionTool.from_defaults(fn=trim_empty_frames),
-    FunctionTool.from_defaults(fn=split_by_scenes),
-    FunctionTool.from_defaults(fn=list_videos),
-    FunctionTool.from_defaults(fn=list_images),
-    FunctionTool.from_defaults(fn=delete_file),
-    FunctionTool.from_defaults(fn=delete_files_pattern),
+    FunctionTool.from_defaults(fn=get_video_info_wrapper, name="get_video_info"),
+    FunctionTool.from_defaults(fn=cut_video_wrapper, name="cut_video"),
+    FunctionTool.from_defaults(fn=concatenate_videos_wrapper, name="concatenate_videos"),
+    FunctionTool.from_defaults(fn=extract_frame_wrapper, name="extract_frame"),
+    FunctionTool.from_defaults(fn=list_videos_wrapper, name="list_videos"),
+    FunctionTool.from_defaults(fn=delete_file_wrapper, name="delete_file"),
 ]
 
 print(f"Backend tools loaded: {len(_backend_tools)} video processing tools")
+
+# Export current_user_id for server middleware
+__all__ = ['agentic_chat_router', 'current_user_id']
 
 def _create_llm():
     """Create OpenAI LLM instance, supporting both OpenAI and Azure OpenAI."""
