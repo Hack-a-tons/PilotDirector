@@ -180,18 +180,12 @@ def concatenate_videos(filenames: List[str], output_filename: str, preserve_orde
     except Exception as e:
         return f"Error: {str(e)}"
 
-def get_user_videos_dir(user_id: str = None) -> str:
-    """Get user-specific videos directory."""
-    if user_id:
-        return os.path.join("../videos", user_id)
-    return "../videos"
-
 def get_current_user_dir():
     """Get the current user's video directory. If no user_id, find the directory with files."""
     user_id = current_user_id.get()
     
     if user_id and user_id != 'None':
-        return get_user_videos_dir(user_id)
+        return get_current_user_dir()
     
     # Fallback: find directory with video files
     base_dir = "../videos"
@@ -232,7 +226,7 @@ def extract_frame(filename: str, timestamp: str, output_filename: str, user_id: 
             return f"Error: Input video {filename} not found"
         
         # Generate unique output filename in user directory
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -417,7 +411,7 @@ def resize_media(filename: str, output_filename: str, width: int = 0, height: in
         if not input_path:
             return f"Error: Input file {filename} not found"
         
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -459,7 +453,7 @@ def change_aspect_ratio(filename: str, output_filename: str, ratio: str, method:
         if not input_path:
             return f"Error: Input file {filename} not found"
         
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -501,7 +495,7 @@ def rotate_media(filename: str, output_filename: str, angle: int, user_id: str =
         if not input_path:
             return f"Error: Input file {filename} not found"
         
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -543,7 +537,7 @@ def recode_video(filename: str, output_filename: str, format: str = "mp4", quali
             base_name = os.path.splitext(output_filename)[0]
             output_filename = f"{base_name}.{format}"
         
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -605,7 +599,7 @@ def crop_image(filename: str, output_filename: str, crop_type: str = "auto", use
             return f"Error: Input image {filename} not found"
         
         # Generate unique output filename
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -1014,7 +1008,7 @@ def trim_empty_frames(filename: str, output_filename: str = None, user_id: str =
             base_name = os.path.splitext(filename)[0]
             output_filename = f"{base_name}_trimmed.mp4"
         
-        user_videos_dir = get_user_videos_dir(user_id)
+        user_videos_dir = get_current_user_dir()
         os.makedirs(user_videos_dir, exist_ok=True)
         unique_output = generate_unique_filename(user_videos_dir, output_filename)
         output_path = os.path.join(user_videos_dir, unique_output)
@@ -1213,7 +1207,7 @@ def split_by_scenes(filename: str, sensitivity: float = 0.3, user_id: str = None
                 # Auto-trim empty frames from the scene
                 print(f"[DEV] Auto-trimming empty frames from scene {i+1}")
                 trimmed_filename = f"{base_name}_scene_{i+1:02d}_clean.mp4"
-                user_videos_dir = get_user_videos_dir(user_id)
+                user_videos_dir = get_current_user_dir()
                 os.makedirs(user_videos_dir, exist_ok=True)
                 trimmed_output = generate_unique_filename(user_videos_dir, trimmed_filename)
                 trimmed_path = os.path.join(user_videos_dir, trimmed_output)
@@ -1338,30 +1332,10 @@ def delete_files_pattern(pattern: str, user_id: str = None) -> str:
         import glob
         import fnmatch
         
-        videos_dir = get_user_videos_dir(user_id)
-        if not os.path.exists(videos_dir):
-            return "Videos directory not found"
-        
-        # If user_id provided, search in user directory first
-        search_dirs = []
-        if user_id:
-            user_dir = get_user_videos_dir(user_id)
-            if os.path.exists(user_dir):
-                search_dirs.append(user_dir)
-        
-        # Also search all directories for backward compatibility
-        try:
-            all_items = os.listdir(videos_dir)
-            for item in all_items:
-                item_path = os.path.join(videos_dir, item)
-                if os.path.isdir(item_path):
-                    search_dirs.append(item_path)
-                elif os.path.isfile(item_path):
-                    search_dirs.append(videos_dir)
-                    break
-        except Exception as e:
-            print(f"[DEV] Error listing videos directory: {e}")
-        
+        # Use current user directory only
+        user_dir = get_current_user_dir()
+        if not os.path.exists(user_dir):
+            return "User directory not found"
         # Supported file extensions for safety
         video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
                            '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
@@ -1375,31 +1349,6 @@ def delete_files_pattern(pattern: str, user_id: str = None) -> str:
         # Convert natural language to glob pattern
         pattern_lower = pattern.lower()
         
-        files_to_delete = []
-        
-        # Search in all user directories
-        all_items = os.listdir(videos_dir)
-        for item in all_items:
-            item_path = os.path.join(videos_dir, item)
-            if os.path.isdir(item_path):  # Any directory is a potential user directory
-                try:
-                    user_files = os.listdir(item_path)
-                    for file in user_files:
-                        file_path = os.path.join(item_path, file)
-                        file_ext = os.path.splitext(file)[1].lower()
-                        
-                        # Only consider media files
-                        if file_ext in all_extensions:
-                            # Check if file matches pattern
-                            if (pattern_lower in ['all images', 'all image files', 'images'] and file_ext in image_extensions) or \
-                               (pattern_lower in ['all videos', 'all video files', 'videos'] and file_ext in video_extensions) or \
-                               (pattern_lower in ['all files', 'all', '*'] and file_ext in all_extensions) or \
-                               fnmatch.fnmatch(file.lower(), pattern_lower) or \
-                               fnmatch.fnmatch(file, pattern):
-                                files_to_delete.append(file_path)
-                except Exception as e:
-                    print(f"[DEV] Error reading user directory {item}: {e}")
-                    continue
         if 'all' in pattern_lower and 'png' in pattern_lower:
             glob_pattern = "*.png"
         elif 'all' in pattern_lower and 'jpg' in pattern_lower:
@@ -1413,8 +1362,8 @@ def delete_files_pattern(pattern: str, user_id: str = None) -> str:
         else:
             glob_pattern = pattern
         
-        # Find matching files
-        search_path = os.path.join(videos_dir, glob_pattern)
+        # Find matching files in user directory only
+        search_path = os.path.join(user_dir, glob_pattern)
         matching_files = glob.glob(search_path)
         
         if not matching_files:
@@ -1489,7 +1438,7 @@ def delete_file(filename: str, user_id: str = None) -> str:
 def list_images(user_id: str = None) -> str:
     """List all image files in user directories."""
     try:
-        videos_dir = get_user_videos_dir(user_id)
+        videos_dir = get_current_user_dir()
         if not os.path.exists(videos_dir):
             return "Videos directory not found"
         
@@ -1580,76 +1529,6 @@ def list_videos_wrapper() -> str:
     short_result = result[:200] + "..." if len(result) > 200 else result
     print(f"[TOOL_RESULT] list_videos: {short_result}")
     return result
-
-def list_videos(user_id: str = None) -> str:
-    """List all video files in user directory with basic info."""
-    try:
-        print(f"[DEV] list_videos() called - starting execution")
-        
-        # Use current user directory only
-        user_dir = get_current_user_dir()
-        print(f"[DEBUG] Using user directory: {user_dir}")
-        
-        if not os.path.exists(user_dir):
-            print(f"[DEV] User directory not found: {user_dir}")
-            return "User directory not found"
-        
-        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', 
-                           '.m4v', '.3gp', '.ogv', '.ts', '.mts', '.m2ts', '.vob', 
-                           '.asf', '.rm', '.rmvb', '.divx', '.xvid', '.f4v', '.mpg', 
-                           '.mpeg', '.m1v', '.m2v', '.mpe', '.mpv', '.mp2', '.mxf']
-        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', 
-                           '.webp', '.svg', '.ico', '.psd', '.raw', '.cr2', '.nef', 
-                           '.arw', '.dng', '.orf', '.rw2', '.pef', '.srw', '.x3f']
-        
-        videos = []
-        images = []
-        
-        # Check only the current user directory
-        try:
-            user_files = os.listdir(user_dir)
-            print(f"[DEBUG] Files in user directory: {user_files}")
-            for file in user_files:
-                file_path = os.path.join(user_dir, file)
-                if any(file.lower().endswith(ext) for ext in video_extensions):
-                    print(f"[DEV] Processing video file: {file}")
-                    video_info = get_video_info_helper(file_path, file)
-                    videos.append(video_info)
-                elif any(file.lower().endswith(ext) for ext in image_extensions):
-                    images.append({"filename": file, "type": "image"})
-        except Exception as e:
-            print(f"[DEV] Error reading user directory {user_dir}: {e}")
-            return f"Error reading user directory: {e}"
-        
-        print(f"[DEV] Returning info for {len(videos)} videos and {len(images)} images")
-        
-        if not videos and not images:
-            return "No video or image files found in your directory."
-        
-        result = []
-        
-        if videos:
-            result.append("You have the following video files:\n")
-            for video in videos:
-                duration = video.get('duration', 0)
-                size = video.get('size', 0)
-                width = video.get('width', 0)
-                height = video.get('height', 0)
-                fps = video.get('fps', 0)
-                frame_count = video.get('frame_count', 0)
-                
-                size_mb = size / (1024 * 1024) if size > 0 else 0
-                result.append(f"{video['filename']}: {duration:.1f}s ({frame_count} frames @{fps:.1f}fps), {size_mb:.1f}MB, {width}x{height}")
-        
-        if images:
-            result.append(f"\nYou also have {len(images)} image files.")
-        
-        result.append("\nLet me know if you want to perform any actions on these files.")
-        
-        return "\n".join(result)
-    
-    except Exception as e:
-        return f"Error listing videos: {str(e)}"
 
     """Delete the latest (most recently created) video files."""
     try:
