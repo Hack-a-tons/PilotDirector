@@ -1500,6 +1500,10 @@ def setGlobalTitle(title: Annotated[str, "Global title"]) -> str:
 def setGlobalDescription(description: Annotated[str, "Global description"]) -> str:
     return f"setGlobalDescription({description})"
 
+def refreshFiles() -> str:
+    """Refresh the file display."""
+    return "File display refreshed successfully"
+
 # Wrapper functions that automatically use current user context
 def get_video_info_wrapper(filename: str) -> str:
     return get_video_info(filename, current_user_id.get())
@@ -1697,6 +1701,7 @@ agentic_chat_router = get_ag_ui_workflow_router(
         setVideoName,
         setGlobalTitle,
         setGlobalDescription,
+        refreshFiles,
     ],
     backend_tools=_backend_tools,
     system_prompt=SYSTEM_PROMPT,

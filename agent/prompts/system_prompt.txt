@@ -96,7 +96,20 @@ IMPORTANT: When a user asks to:
 - 'remove all jpg images' -> call delete_files_pattern('*.jpg')
 - 'rename video1.mp4 to new_name.mp4' -> call rename_file('video1.mp4', 'new_name.mp4')
 
-WORKFLOW: After any file-modifying operation (cut, concatenate, extract, crop, delete), ALWAYS call refreshFiles() to update the display.
+WORKFLOW: After ANY file-modifying operation, you MUST call refreshFiles() to update the display:
+- After cut_video() -> call refreshFiles()
+- After concatenate_videos() -> call refreshFiles()  
+- After extract_frame() -> call refreshFiles()
+- After split_by_scenes() -> call refreshFiles()
+- After delete_file() -> call refreshFiles()
+- After delete_files_pattern() -> call refreshFiles()
+- After delete_latest_files() -> call refreshFiles()
+- After rename_file() -> call refreshFiles()
+- After drop_first_frame() -> call refreshFiles()
+- After drop_last_frame() -> call refreshFiles()
+- After any resize_media(), change_aspect_ratio(), rotate_media(), recode_video(), crop_image(), trim_empty_frames() -> call refreshFiles()
+
+MANDATORY: Every time you create, modify, rename, or delete ANY file, you MUST immediately call refreshFiles() as the next action.
 
 TERMINOLOGY:
 - "first video" = video1.mp4 (by name)
