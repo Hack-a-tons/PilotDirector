@@ -11,6 +11,40 @@ import type { AgentState, Item } from "@/lib/canvas/types";
 import { initialState, isNonEmptyAgentState, defaultDataFor } from "@/lib/canvas/state";
 import { UserProvider, useUser } from "@/contexts/UserContext";
 
+// Custom hook to log AI messages
+function useMessageLogger() {
+  const loggedMessages = useRef(new Set());
+  
+  useEffect(() => {
+    const logAIMessage = (content: string) => {
+      if (content && !loggedMessages.current.has(content)) {
+        loggedMessages.current.add(content);
+        console.log(`[CHAT] AI: ${content}`);
+      }
+    };
+
+    // Check for new messages every 500ms
+    const interval = setInterval(() => {
+      // Look for CopilotKit message elements
+      const messages = document.querySelectorAll('[class*="message"], [class*="Message"]');
+      messages.forEach((element) => {
+        const textContent = element.textContent?.trim();
+        if (textContent && 
+            !textContent.startsWith('Hello!') && // Skip initial message
+            textContent.length > 10 && // Skip short messages
+            element.getAttribute('data-logged') !== 'true') {
+          
+          // Mark as logged to avoid duplicates
+          element.setAttribute('data-logged', 'true');
+          logAIMessage(textContent);
+        }
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, []);
+}
+
 interface FileItem {
   name: string;
   type: 'video' | 'image';
@@ -25,9 +59,13 @@ interface FileItem {
 
 function PilotDirectorPage() {
   const { user, userId, loading, signInWithGoogle, signInWithApple, logout } = useUser();
+  
   const { state, setState } = useCoAgent<AgentState>({
     name: "sample_agent",
-    initialState,
+    initialState: {
+      ...initialState,
+      userId: userId // Pass userId to agent
+    },
   });
 
   const cachedStateRef = useRef<AgentState>(state ?? initialState);

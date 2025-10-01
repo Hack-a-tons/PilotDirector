@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
 import os
+import json
+import asyncio
 
 # Load environment variables from .env/.env.local (repo root or agent dir) if present
 try:
@@ -32,12 +34,39 @@ from .sheets_integration import get_sheet_data, convert_sheet_to_canvas_items, s
 
 app = FastAPI()
 
-# Middleware to extract user_id from headers
+# Middleware to extract user_id from headers and log requests
 @app.middleware("http")
-async def set_user_context(request: Request, call_next):
+async def set_user_context_and_log(request: Request, call_next):
     user_id = request.headers.get('x-user-id', 'default')
     current_user_id.set(user_id)
+    
+    # Log incoming requests
+    if request.url.path == "/run":
+        try:
+            body = await request.body()
+            if body:
+                request_data = json.loads(body)
+                messages = request_data.get('messages', [])
+                if messages:
+                    last_message = messages[-1].get('content', '')
+                    print(f"[CHAT] User: {last_message}")
+        except Exception as e:
+            print(f"[DEBUG] Could not parse request body: {e}")
+        
+        # Recreate request with body for downstream processing
+        from starlette.requests import Request as StarletteRequest
+        request = StarletteRequest(request.scope, receive=lambda: {"type": "http.request", "body": body})
+    
     response = await call_next(request)
+    
+    # Simple response logging for /run endpoint
+    if request.url.path == "/run":
+        try:
+            # Just log that we got a response - the content is too complex to parse reliably
+            print(f"[DEBUG] AI response sent to client")
+        except Exception as e:
+            print(f"[DEBUG] Response logging error: {e}")
+    
     return response
 
 app.include_router(agentic_chat_router)
