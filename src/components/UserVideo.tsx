@@ -1,7 +1,7 @@
 import { useUser } from "@/contexts/UserContext";
 import { FrameByFramePlayer } from "./FrameByFramePlayer";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Download } from "lucide-react";
 
 interface UserVideoProps {
@@ -15,6 +15,7 @@ interface UserVideoProps {
 export function UserVideo({ filename, type, fps, frameCount, className }: UserVideoProps) {
   const { userId } = useUser();
   const [videoUrl, setVideoUrl] = useState<string>('');
+  const currentUrlRef = useRef<string>('');
 
   useEffect(() => {
     // Create a blob URL with proper headers
@@ -29,6 +30,7 @@ export function UserVideo({ filename, type, fps, frameCount, className }: UserVi
         if (response.ok) {
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
+          currentUrlRef.current = url;
           setVideoUrl(url);
         }
       } catch (error) {
@@ -40,8 +42,8 @@ export function UserVideo({ filename, type, fps, frameCount, className }: UserVi
 
     // Cleanup blob URL on unmount
     return () => {
-      if (videoUrl) {
-        URL.revokeObjectURL(videoUrl);
+      if (currentUrlRef.current) {
+        URL.revokeObjectURL(currentUrlRef.current);
       }
     };
   }, [filename, userId]);

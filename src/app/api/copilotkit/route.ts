@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
         headers: {
           'x-user-id': userId
         }
-      })
+      }) as never
     }
   })
 

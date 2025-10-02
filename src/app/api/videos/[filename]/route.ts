@@ -50,7 +50,7 @@ export async function GET(
       if (!existsSync(filePath)) {
         filePath = null;
       }
-    } catch (error) {
+    } catch {
       // No user ID provided, search all directories
       filePath = findFileInUserDirectories(filename);
     }

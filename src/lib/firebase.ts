@@ -1,5 +1,5 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, OAuthProvider } from 'firebase/auth';
+import { initializeApp, FirebaseApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, OAuthProvider, Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,10 +13,10 @@ const firebaseConfig = {
 // Check if Firebase config is available
 const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId;
 
-let app;
-let auth;
-let googleProvider;
-let appleProvider;
+let app: FirebaseApp | undefined;
+let auth: Auth | null;
+let googleProvider: GoogleAuthProvider | null;
+let appleProvider: OAuthProvider | null;
 
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);

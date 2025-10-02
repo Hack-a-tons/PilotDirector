@@ -2,48 +2,13 @@
 
 import { useCoAgent, useCopilotAction } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Upload, LogIn, LogOut, User } from "lucide-react";
-import Image from "next/image";
 import { UserVideo } from "@/components/UserVideo";
 import type { AgentState, Item } from "@/lib/canvas/types";
 import { initialState, isNonEmptyAgentState, defaultDataFor } from "@/lib/canvas/state";
 import { UserProvider, useUser } from "@/contexts/UserContext";
-
-// Custom hook to log AI messages
-function useMessageLogger() {
-  const loggedMessages = useRef(new Set());
-  
-  useEffect(() => {
-    const logAIMessage = (content: string) => {
-      if (content && !loggedMessages.current.has(content)) {
-        loggedMessages.current.add(content);
-        console.log(`[CHAT] AI: ${content}`);
-      }
-    };
-
-    // Check for new messages every 500ms
-    const interval = setInterval(() => {
-      // Look for CopilotKit message elements
-      const messages = document.querySelectorAll('[class*="message"], [class*="Message"]');
-      messages.forEach((element) => {
-        const textContent = element.textContent?.trim();
-        if (textContent && 
-            !textContent.startsWith('Hello!') && // Skip initial message
-            textContent.length > 10 && // Skip short messages
-            element.getAttribute('data-logged') !== 'true') {
-          
-          // Mark as logged to avoid duplicates
-          element.setAttribute('data-logged', 'true');
-          logAIMessage(textContent);
-        }
-      });
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, []);
-}
 
 interface FileItem {
   name: string;
@@ -114,7 +79,7 @@ function PilotDirectorPage() {
     event.target.value = '';
   };
 
-  const fetchFiles = async () => {
+  const fetchFiles = useCallback(async () => {
     try {
       setLoadingFiles(true);
       const response = await fetch('/api/user-files', {
@@ -129,13 +94,13 @@ function PilotDirectorPage() {
     } finally {
       setLoadingFiles(false);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     if (!loading) {
       fetchFiles();
     }
-  }, [loading, userId]);
+  }, [loading, userId, fetchFiles]);
 
   useEffect(() => {
     // Auto-play all videos after files load

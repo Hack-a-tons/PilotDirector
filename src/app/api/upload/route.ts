@@ -14,7 +14,7 @@ async function ensureUserDirectory(userId: string): Promise<string> {
   const userDir = join(process.cwd(), 'videos', userId);
   try {
     await mkdir(userDir, { recursive: true });
-  } catch (error) {
+  } catch {
     // Directory might already exist
   }
   return userDir;
