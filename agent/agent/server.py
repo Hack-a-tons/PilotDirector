@@ -1,9 +1,13 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
 import os
+import json
+import asyncio
+import traceback
 
 # Load environment variables from .env/.env.local (repo root or agent dir) if present
 try:
@@ -27,10 +31,67 @@ def _load_env_files() -> None:
 
 _load_env_files()
 
-from .agent import agentic_chat_router
+from .agent import agentic_chat_router, current_user_id
 from .sheets_integration import get_sheet_data, convert_sheet_to_canvas_items, sync_canvas_to_sheet, get_sheet_names, create_new_sheet
 
 app = FastAPI()
+
+# Add error handling middleware
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        # Check for Azure OpenAI content filter error
+        if "content_filter" in str(e) or "ResponsibleAIPolicyViolation" in str(e):
+            print(f"[ERROR] Content filter triggered: {str(e)}")
+            return JSONResponse(
+                status_code=200,  # Return 200 to avoid frontend errors
+                content={
+                    "error": "I apologize, but I cannot process that request due to content policy restrictions. Please try rephrasing your request or ask for help with a different video editing task."
+                }
+            )
+        else:
+            print(f"[ERROR] Unexpected error: {str(e)}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise e
+
+# Middleware to extract user_id from headers and log requests
+@app.middleware("http")
+async def set_user_context_and_log(request: Request, call_next):
+    user_id = request.headers.get('x-user-id', 'default')
+    current_user_id.set(user_id)
+    
+    # Log incoming requests
+    if request.url.path == "/run":
+        try:
+            body = await request.body()
+            if body:
+                request_data = json.loads(body)
+                messages = request_data.get('messages', [])
+                if messages:
+                    last_message = messages[-1].get('content', '')
+                    print(f"[CHAT] User: {last_message}")
+        except Exception as e:
+            print(f"[DEBUG] Could not parse request body: {e}")
+        
+        # Recreate request with body for downstream processing
+        from starlette.requests import Request as StarletteRequest
+        request = StarletteRequest(request.scope, receive=lambda: {"type": "http.request", "body": body})
+    
+    response = await call_next(request)
+    
+    # Simple response logging for /run endpoint
+    if request.url.path == "/run":
+        try:
+            # Just log that we got a response - the content is too complex to parse reliably
+            print(f"[DEBUG] AI response sent to client")
+        except Exception as e:
+            print(f"[DEBUG] Response logging error: {e}")
+    
+    return response
+
 app.include_router(agentic_chat_router)
 
 # Request models

@@ -54,3 +54,6 @@ bun.lockb
 agent/venv/
 agent/agent/__pycache__/
 venv
+
+# Videos directory
+videos/

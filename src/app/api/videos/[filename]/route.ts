@@ -1,6 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createReadStream, existsSync, statSync } from 'fs';
+import { createReadStream, existsSync, statSync, readdirSync } from 'fs';
 import { join } from 'path';
+
+function getUserId(request: NextRequest): string {
+  const userId = request.headers.get('x-user-id');
+  if (!userId) {
+    throw new Error('User ID required');
+  }
+  return userId;
+}
+
+function findFileInUserDirectories(filename: string): string | null {
+  const videosDir = join(process.cwd(), 'videos');
+  
+  try {
+    // Get all user directories
+    const userDirs = readdirSync(videosDir, { withFileTypes: true })
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+    
+    // Check each user directory for the file
+    for (const userDir of userDirs) {
+      const filePath = join(videosDir, userDir, filename);
+      if (existsSync(filePath)) {
+        return filePath;
+      }
+    }
+  } catch (error) {
+    console.error('Error searching user directories:', error);
+  }
+  
+  return null;
+}
 
 export async function GET(
   request: NextRequest,
@@ -8,10 +39,28 @@ export async function GET(
 ) {
   try {
     const { filename } = await params;
-    const filePath = join(process.cwd(), 'videos', filename);
     
-    if (!existsSync(filePath)) {
-      return new NextResponse('File not found', { status: 404 });
+    // Try to get user-specific file first
+    let filePath: string | null = null;
+    
+    try {
+      const userId = getUserId(request);
+      filePath = join(process.cwd(), 'videos', userId, filename);
+      
+      if (!existsSync(filePath)) {
+        filePath = null;
+      }
+    } catch (error) {
+      // No user ID provided, search all directories
+      filePath = findFileInUserDirectories(filename);
+    }
+    
+    // Fallback to root videos directory
+    if (!filePath) {
+      filePath = join(process.cwd(), 'videos', filename);
+      if (!existsSync(filePath)) {
+        return new NextResponse('File not found', { status: 404 });
+      }
     }
 
     const stat = statSync(filePath);
