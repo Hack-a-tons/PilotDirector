@@ -1642,6 +1642,13 @@ def delete_files_pattern_wrapper(pattern: str) -> str:
     print(f"[TOOL_RESULT] delete_files_pattern: {result}")
     return result
 
+def recode_video_wrapper(filename: str, output_filename: str, format: str = "mp4", quality: str = "medium") -> str:
+    print(f"[ACTION] Recoding video: {filename} -> {output_filename} ({format}, {quality})")
+    user_id = current_user_id.get()
+    result = recode_video(filename, output_filename, format, quality, user_id)
+    print(f"[TOOL_RESULT] recode_video: {result}")
+    return result
+
 # Create backend tools with wrapper functions
 _backend_tools = [
     FunctionTool.from_defaults(fn=get_video_info_wrapper, name="get_video_info"),
@@ -1656,6 +1663,7 @@ _backend_tools = [
     FunctionTool.from_defaults(fn=drop_first_frame_wrapper, name="drop_first_frame"),
     FunctionTool.from_defaults(fn=drop_last_frame_wrapper, name="drop_last_frame"),
     FunctionTool.from_defaults(fn=rename_file_wrapper, name="rename_file"),
+    FunctionTool.from_defaults(fn=recode_video_wrapper, name="recode_video"),
 ]
 
 print(f"Backend tools loaded: {len(_backend_tools)} video processing tools")
