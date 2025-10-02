@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
 import os
 import json
 import asyncio
+import traceback
 
 # Load environment variables from .env/.env.local (repo root or agent dir) if present
 try:
@@ -33,6 +35,27 @@ from .agent import agentic_chat_router, current_user_id
 from .sheets_integration import get_sheet_data, convert_sheet_to_canvas_items, sync_canvas_to_sheet, get_sheet_names, create_new_sheet
 
 app = FastAPI()
+
+# Add error handling middleware
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        # Check for Azure OpenAI content filter error
+        if "content_filter" in str(e) or "ResponsibleAIPolicyViolation" in str(e):
+            print(f"[ERROR] Content filter triggered: {str(e)}")
+            return JSONResponse(
+                status_code=200,  # Return 200 to avoid frontend errors
+                content={
+                    "error": "I apologize, but I cannot process that request due to content policy restrictions. Please try rephrasing your request or ask for help with a different video editing task."
+                }
+            )
+        else:
+            print(f"[ERROR] Unexpected error: {str(e)}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise e
 
 # Middleware to extract user_id from headers and log requests
 @app.middleware("http")
