@@ -2,6 +2,7 @@ import { useUser } from "@/contexts/UserContext";
 import { FrameByFramePlayer } from "./FrameByFramePlayer";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 
 interface UserVideoProps {
   filename: string;
@@ -45,6 +46,17 @@ export function UserVideo({ filename, type, fps, frameCount, className }: UserVi
     };
   }, [filename, userId]);
 
+  const handleDownload = () => {
+    if (videoUrl) {
+      const a = document.createElement('a');
+      a.href = videoUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   if (!videoUrl) {
     return (
       <div className={`bg-gray-100 rounded-lg flex items-center justify-center ${className}`}>
@@ -55,12 +67,21 @@ export function UserVideo({ filename, type, fps, frameCount, className }: UserVi
 
   if (type === 'video') {
     return (
-      <FrameByFramePlayer
-        src={videoUrl}
-        className={className}
-        fps={fps}
-        frameCount={frameCount}
-      />
+      <div className="relative">
+        <FrameByFramePlayer
+          src={videoUrl}
+          className={className}
+          fps={fps}
+          frameCount={frameCount}
+        />
+        <button
+          onClick={handleDownload}
+          className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-black/70 text-white rounded-md transition-colors"
+          title={`Download ${filename}`}
+        >
+          <Download size={16} />
+        </button>
+      </div>
     );
   } else {
     return (
@@ -71,6 +92,13 @@ export function UserVideo({ filename, type, fps, frameCount, className }: UserVi
           fill
           className="object-contain"
         />
+        <button
+          onClick={handleDownload}
+          className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-black/70 text-white rounded-md transition-colors"
+          title={`Download ${filename}`}
+        >
+          <Download size={16} />
+        </button>
       </div>
     );
   }
